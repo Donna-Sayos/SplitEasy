@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SplitEasy — Bill Splitter & Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body data-guest="{{ 'true' if is_guest else 'false' }}">
+  <nav class="navbar">
+    <div class="brand">SplitEasy</div>
+    <div class="nav-right">
+      {% if is_guest %}
+        <span class="badge">Guest Mode (Calculator Only)</span>
+        <a href="/logout" class="btn-link">Log In / Sign Up</a>
+      {% else %}
+        <span class="badge">{{ user.username }} • {{ user.state_code }} ({{ "%.2f"|format(user.tax_rate * 100) }}% Tax)</span>
+        <a href="/logout" class="btn-link">Logout</a>
+      {% endif %}
+    </div>
+  </nav>
+
+  <main class="workspace">
+    <!-- Left Column: Bill Splitter -->
+    <section class="card">
+      <h2>Create a New Bill to Split</h2>
+      <p class="subtext">Choose Equal or Per-Meal splitting, customize tip, and calculate immediately.</p>
+
+      <div id="splitter-alert" class="alert"></div>
+
+      <div class="mode-toggle">
+        <button type="button" class="mode-btn active" id="btn-equal" onclick="setSplitMode('equal')">Split Equally</button>
+        <button type="button" class="mode-btn" id="btn-itemized" onclick="setSplitMode('itemized')">Split Per Meal</button>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="bill-title">Bill Title</label>
+          <input type="text" id="bill-title" placeholder="e.g., Burger Spot or Thai Dinner" />
+        </div>
+        <div class="form-group">
+          <label for="state-select">State Sales Tax</label>
+          <select id="state-select" {% if not is_guest %}disabled{% endif %}>
+            {% for s in states %}
+              <option
+                value="{{ s.state_code }}"
+                data-rate="{{ s.tax_rate }}"
+                {% if user and user.state_code == s.state_code %}selected{% elif is_guest and s.state_code == 'NY' %}selected{% endif %}
+              >
+                {{ s.state_code }} - {{ s.state_name }} ({{ "%.2f"|format(s.tax_rate * 100) }}%)
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <!-- Equal Mode Subtotal -->
+      <div class="form-group" id="equal-subtotal-group">
+        <label for="equal-subtotal">Bill Subtotal ($)</label>
+        <input type="number" id="equal-subtotal" step="0.01" min="0" placeholder="80.00" />
+      </div>
+
+      <!-- Participants Section -->
+      <div class="form-group">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <label style="margin:0;">Participants</label>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addParticipant()">+ Add Person</button>
+        </div>
+        <div id="participants-container"></div>
+      </div>
+
+      <!-- Tip Options -->
+      <div class="form-group">
+        <label>Select Tip</label>
+        <div class="tip-group">
+          <button type="button" class="tip-btn" onclick="selectTip(15, this)">15%</button>
+          <button type="button" class="tip-btn active" onclick="selectTip(18, this)">18%</button>
+          <button type="button" class="tip-btn" onclick="selectTip(20, this)">20%</button>
+          <button type="button" class="tip-btn" onclick="selectTip('custom', this)">Custom</button>
+        </div>
+        <input
+          type="number"
+          id="custom-tip-input"
+          step="0.1"
+          min="0"
+          placeholder="Enter custom tip % (e.g., 22 or 0)"
+          style="display:none; margin-top:8px;"
+        />
+      </div>
+
+      <!-- Live Calculation Result -->
+      <div class="result-box" id="result-box" style="display:none;">
+        <div class="result-summary" id="result-summary"></div>
+        <div id="result-lines"></div>
+      </div>
+
+      <div class="action-row" {% if is_guest %}style="grid-template-columns: 1fr;"{% endif %}>
+        <button type="button" class="btn btn-primary" onclick="calculateSplit()">Calculate Split</button>
+        {% if not is_guest %}
+          <button type="button" class="btn btn-secondary" onclick="saveBill()">Save Bill to History</button>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- Right Column: Previous Bills Dashboard -->
+    <section class="card">
+      <h2>Previous Bills Dashboard</h2>
+      {% if is_guest %}
+        <div class="locked-box">
+          <p style="font-weight:700; margin-bottom:6px;">Saved History Unavailable in Guest Mode</p>
+          <p class="subtext">Create a free account to save calculated bills and look them up by exact date and time of entry.</p>
+          <a href="/logout" class="btn btn-primary" style="width:auto;">Create Account / Log In</a>
+        </div>
+      {% else %}
+        <p class="subtext">Filter your saved receipts by date or exact time of entry.</p>
+        <div class="filter-bar">
+          <input type="date" id="filter-date" />
+          <input type="time" id="filter-time" />
+          <button type="button" class="btn btn-secondary btn-sm" onclick="loadBills()">Filter</button>
+        </div>
+        <div style="margin-bottom: 12px;">
+          <button type="button" class="btn-link" style="font-size:0.8rem;" onclick="resetFilters()">Show All Bills</button>
+        </div>
+        <div id="history-list"></div>
+      {% endif %}
+    </section>
+  </main>
+
+  <script>
+    const IS_GUEST = document.body.dataset.guest === "true";
+    let splitMode = "equal";
+    let selectedTip = 18;
+    let participantCounter = 0;
+
+    addParticipant("Alex");
+    addParticipant("Sam");
+    if (!IS_GUEST) {
+      loadBills();
+    }
+
+    function setSplitMode(mode) {
+      splitMode = mode;
+      document.getElementById("btn-equal").classList.toggle("active", mode === "equal");
+      document.getElementById("btn-itemized").classList.toggle("active", mode === "itemized");
+      document.getElementById("equal-subtotal-group").style.display = mode === "equal" ? "block" : "none";
+
+      document.querySelectorAll(".add-item-btn").forEach((btn) => {
+        btn.style.display = mode === "itemized" ? "inline-block" : "none";
+      });
+      document.querySelectorAll(".items-list").forEach((list) => {
+        list.style.display = mode === "itemized" ? "block" : "none";
+      });
+    }
+
+    function addParticipant(defaultName = "") {
+      participantCounter++;
+      const id = participantCounter;
+      const container = document.getElementById("participants-container");
+      const div = document.createElement("div");
+      div.className = "participant-box";
+      div.id = `participant-${id}`;
+      div.innerHTML = `
+        <div class="participant-header">
+          <input type="text" class="part-name" placeholder="Person ${id} Name" value="${defaultName}" />
+          <button type="button" class="btn btn-secondary btn-sm add-item-btn" style="display:${splitMode === "itemized" ? "inline-block" : "none"}; white-space:nowrap;" onclick="addFoodDrinkRow(${id})">
+            + Foods/Drinks
+          </button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="removeParticipant(${id})">✕</button>
+        </div>
+        <div class="items-list" id="items-${id}" style="display:${splitMode === "itemized" ? "block" : "none"};"></div>
+      `;
+      container.appendChild(div);
+      if (splitMode === "itemized") {
+        addFoodDrinkRow(id);
+      }
+    }
+
+    function removeParticipant(id) {
+      const boxes = document.querySelectorAll(".participant-box");
+      if (boxes.length <= 1) return;
+      document.getElementById(`participant-${id}`).remove();
+    }
+
+    function addFoodDrinkRow(partId) {
+      const list = document.getElementById(`items-${partId}`);
+      const row = document.createElement("div");
+      row.className = "item-row";
+      row.innerHTML = `
+        <input type="text" class="item-name" placeholder="Food or Drink name" />
+        <input type="number" class="item-price" step="0.01" min="0" placeholder="0.00" />
+        <button type="button" class="btn btn-secondary btn-sm" onclick="this.parentElement.remove()">✕</button>
+      `;
+      list.appendChild(row);
+    }
+
+    function selectTip(val, btn) {
+      document.querySelectorAll(".tip-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      const customInput = document.getElementById("custom-tip-input");
+      if (val === "custom") {
+        customInput.style.display = "block";
+        selectedTip = "custom";
+      } else {
+        customInput.style.display = "none";
+        selectedTip = val;
+      }
+    }
+
+    function gatherFormData() {
+      const stateSelect = document.getElementById("state-select");
+      const stateCode = stateSelect.value;
+      const taxRate = parseFloat(stateSelect.options[stateSelect.selectedIndex].dataset.rate || 0);
+      const tipPercent =
+        selectedTip === "custom"
+          ? parseFloat(document.getElementById("custom-tip-input").value || 0)
+          : parseFloat(selectedTip);
+
+      const participants = [];
+      document.querySelectorAll(".participant-box").forEach((box, idx) => {
+        const name = box.querySelector(".part-name").value.trim() || `Person ${idx + 1}`;
+        const items = [];
+        box.querySelectorAll(".item-row").forEach((row) => {
+          const itemName = row.querySelector(".item-name").value.trim();
+          const itemPrice = parseFloat(row.querySelector(".item-price").value || 0);
+          if (itemName || itemPrice > 0) {
+            items.push({ item_name: itemName || "Item", item_price: itemPrice });
+          }
+        });
+        participants.push({ participant_name: name, items });
+      });
+
+      let subtotal = 0;
+      if (splitMode === "equal") {
+        subtotal = parseFloat(document.getElementById("equal-subtotal").value || 0);
+      } else {
+        participants.forEach((p) => {
+          p.personSub = p.items.reduce((acc, i) => acc + i.item_price, 0);
+          subtotal += p.personSub;
+        });
+      }
+
+      const taxAmount = subtotal * taxRate;
+      const tipAmount = subtotal * (tipPercent / 100);
+      const totalAmount = subtotal + taxAmount + tipAmount;
+      const numPeople = participants.length;
+
+      participants.forEach((p) => {
+        if (splitMode === "equal") {
+          p.owed_amount = totalAmount / numPeople;
+        } else {
+          p.owed_amount = p.personSub + (taxAmount + tipAmount) / numPeople;
+        }
+      });
+
+      return {
+        bill_title: document.getElementById("bill-title").value.trim() || "Untitled Bill",
+        split_mode: splitMode,
+        state_code: stateCode,
+        taxRate,
+        subtotal,
+        tip_percent: tipPercent,
+        taxAmount,
+        tipAmount,
+        totalAmount,
+        participants,
+      };
+    }
+
+    function calculateSplit() {
+      const data = gatherFormData();
+      const box = document.getElementById("result-box");
+      const summary = document.getElementById("result-summary");
+      const lines = document.getElementById("result-lines");
+
+      summary.textContent = `Subtotal: $${data.subtotal.toFixed(2)} | ${data.state_code} Tax (${(data.taxRate * 100).toFixed(2)}%): $${data.taxAmount.toFixed(2)} | Tip (${data.tip_percent}%): $${data.tipAmount.toFixed(2)} | Grand Total: $${data.totalAmount.toFixed(2)}`;
+      lines.innerHTML = data.participants
+        .map(
+          (p) =>
+            `<div class="result-line"><span>${p.participant_name}</span><span>$${p.owed_amount.toFixed(2)}</span></div>`
+        )
+        .join("");
+      box.style.display = "block";
+    }
+
+    async function saveBill() {
+      calculateSplit();
+      const payload = gatherFormData();
+      const res = await fetch("/api/bills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      const alertBox = document.getElementById("splitter-alert");
+      if (res.ok) {
+        alertBox.textContent = "Bill saved to your history!";
+        alertBox.className = "alert success";
+        loadBills();
+      } else {
+        alertBox.textContent = data.error || "Could not save bill.";
+        alertBox.className = "alert error";
+      }
+    }
+
+    async function loadBills() {
+      const dateVal = document.getElementById("filter-date").value;
+      const timeVal = document.getElementById("filter-time").value;
+      const params = new URLSearchParams();
+      if (dateVal) params.append("date", dateVal);
+      if (timeVal) params.append("time", timeVal);
+
+      const res = await fetch(`/api/bills?${params.toString()}`);
+      if (!res.ok) return;
+      const bills = await res.json();
+      const list = document.getElementById("history-list");
+
+      if (bills.length === 0) {
+        list.innerHTML = `<p class="subtext">No saved bills found for this filter.</p>`;
+        return;
+      }
+
+      list.innerHTML = bills
+        .map((b) => {
+          const partsHtml = b.participants
+            .map((p) => {
+              const itemsText =
+                p.items && p.items.length
+                  ? ` (${p.items.map((i) => `${i.item_name}: $${i.item_price.toFixed(2)}`).join(", ")})`
+                  : "";
+              return `<div class="history-part"><strong>${p.participant_name}</strong>: $${p.owed_amount.toFixed(2)}${itemsText}</div>`;
+            })
+            .join("");
+
+          return `
+            <div class="history-card">
+              <div class="history-top">
+                <span>${b.bill_title} (${b.split_mode === "equal" ? "Equal" : "Per Meal"})</span>
+                <span>$${b.total_amount.toFixed(2)}</span>
+              </div>
+              <div class="history-meta">
+                Logged: ${b.entry_timestamp} • Subtotal: $${b.subtotal.toFixed(2)} | Tax: $${b.tax_amount.toFixed(2)} | Tip (${b.tip_percent}%): $${b.tip_amount.toFixed(2)}
+              </div>
+              ${partsHtml}
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    function resetFilters() {
+      document.getElementById("filter-date").value = "";
+      document.getElementById("filter-time").value = "";
+      loadBills();
+    }
+  </script>
+</body>
+</html>
