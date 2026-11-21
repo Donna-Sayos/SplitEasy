@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SplitEasy — Sign In or Guest Access</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <nav class="navbar">
+    <div class="brand">SplitEasy</div>
+    <div class="nav-right">
+      <span class="subtext" style="margin:0;">Group Bill & Meal Splitter</span>
+    </div>
+  </nav>
+
+  <main class="auth-container">
+    <!-- Guest Quick Access -->
+    <section class="card guest-card">
+      <div>
+        <h2>Quick Split (No Account)</h2>
+        <p class="subtext">
+          Just need to calculate a restaurant or group bill right now? Jump straight into the calculator without signing up.
+        </p>
+        <ul style="padding-left: 18px; font-size: 0.9rem; color: var(--muted); margin-bottom: 20px;">
+          <li>Split Equally or Per Meal (Foods & Drinks)</li>
+          <li>Pick any US state sales tax rate</li>
+          <li>15%, 18%, 20%, or Custom tip options</li>
+          <li><em>Note: Guest calculations are not saved to history.</em></li>
+        </ul>
+      </div>
+      <a href="/guest" class="btn btn-secondary" style="width:100%;">Continue as Guest →</a>
+    </section>
+
+    <!-- Login / Sign Up Card -->
+    <section class="card">
+      <div class="tabs">
+        <button type="button" class="tab-btn active" id="tab-login" onclick="switchTab('login')">Log In</button>
+        <button type="button" class="tab-btn" id="tab-signup" onclick="switchTab('signup')">Create Account</button>
+      </div>
+
+      <div id="auth-alert" class="alert"></div>
+
+      <!-- Login Form -->
+      <form id="login-form" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="login-email">Email Address</label>
+          <input type="email" id="login-email" placeholder="alex@uni.edu" required />
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" placeholder="Enter your password" required />
+        </div>
+        <button type="submit" class="btn btn-primary">Log In & View Dashboard</button>
+      </form>
+
+      <!-- Sign Up Form -->
+      <form id="signup-form" style="display:none;" onsubmit="handleSignup(event)">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="reg-username">Username</label>
+            <input type="text" id="reg-username" placeholder="alex_m" required />
+          </div>
+          <div class="form-group">
+            <label for="reg-state">Home State (Auto Tax)</label>
+            <select id="reg-state" required>
+              <option value="">Loading states...</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="reg-email">Email Address</label>
+          <input type="email" id="reg-email" placeholder="alex@uni.edu" required />
+        </div>
+        <div class="form-group">
+          <label for="reg-password">Password</label>
+          <input type="password" id="reg-password" placeholder="Choose a password" required />
+        </div>
+        <button type="submit" class="btn btn-primary">Create Account</button>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    // Populate states dropdown from REST API
+    fetch("/api/states")
+      .then((res) => res.json())
+      .then((states) => {
+        const select = document.getElementById("reg-state");
+        select.innerHTML = states
+          .map(
+            (s) =>
+              `<option value="${s.state_code}" ${s.state_code === "NY" ? "selected" : ""}>
+                ${s.state_code} - ${s.state_name} (${(s.tax_rate * 100).toFixed(2)}%)
+              </option>`
+          )
+          .join("");
+      });
+
+    function switchTab(tab) {
+      const alertBox = document.getElementById("auth-alert");
+      alertBox.className = "alert";
+      if (tab === "login") {
+        document.getElementById("login-form").style.display = "block";
+        document.getElementById("signup-form").style.display = "none";
+        document.getElementById("tab-login").classList.add("active");
+        document.getElementById("tab-signup").classList.remove("active");
+      } else {
+        document.getElementById("login-form").style.display = "none";
+        document.getElementById("signup-form").style.display = "block";
+        document.getElementById("tab-login").classList.remove("active");
+        document.getElementById("tab-signup").classList.add("active");
+      }
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: document.getElementById("login-email").value,
+          password: document.getElementById("login-password").value,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        window.location.href = data.redirect;
+      } else {
+        showAlert(data.error || "Login failed.", "error");
+      }
+    }
+
+    async function handleSignup(e) {
+      e.preventDefault();
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: document.getElementById("reg-username").value,
+          state_code: document.getElementById("reg-state").value,
+          email: document.getElementById("reg-email").value,
+          password: document.getElementById("reg-password").value,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        window.location.href = data.redirect;
+      } else {
+        showAlert(data.error || "Sign up failed.", "error");
+      }
+    }
+
+    function showAlert(msg, type) {
+      const box = document.getElementById("auth-alert");
+      box.textContent = msg;
+      box.className = `alert ${type}`;
+    }
+  </script>
+</body>
+</html>
