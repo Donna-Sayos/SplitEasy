@@ -13,10 +13,13 @@
 
 **A full-stack group bill and meal splitter with automatic US state sales tax, Equal & Per-Meal itemized splitting, Guest Mode, and timestamped receipt history.**
 
-<p>
+<p align="center">
+  <img src="https://img.shields.io/badge/Coming_Soon-019999">
+  <!-- Once deployed on PythonAnywhere, delete the line above and uncomment the block below:
   <a href="https://YOUR_://pythonanywhere.com" target="_blank" rel="noopener noreferrer">
     <img src="https://shields.io" alt="Live Demo">
   </a>
+  -->
 </p>
 
 </div>
@@ -36,14 +39,12 @@
 ## **🛠️ Tech Stack**
 
 <p>
-  <img src="https://shields.io" alt="Python">
-  <img src="https://shields.io" alt="Flask">
-  <img src="https://shields.io" alt="SQLite">
-  <img src="https://shields.io" alt="RESTful API">
-  <img src="https://shields.io" alt="HTML5">
-  <img src="https://shields.io" alt="CSS3">
-  <img src="https://shields.io" alt="JavaScript">
-  <img src="https://shields.io" alt="PythonAnywhere">
+  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white">
+  <img src="https://img.shields.io/badge/Flask-000000?style=for-the-badge&logo=flask&logoColor=white">
+  <img src="https://img.shields.io/badge/SQL-336791?style=for-the-badge&logo=postgresql&logoColor=white">
+  <img src="https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black">
+  <img src="https://img.shields.io/badge/HTML5-E34F26?style=for-the-badge&logo=html5&logoColor=white">
+  <img src="https://img.shields.io/badge/CSS3-1572B6?style=for-the-badge&logo=css3&logoColor=white">
 </p>
 
 ---
