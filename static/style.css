@@ -170,6 +170,35 @@ select:focus {
   border-color: var(--primary);
 }
 
+/* SELECT scroll-bar styling START */
+select[size] {
+  appearance: none;
+  -webkit-appearance: none;
+  overflow-y: auto;
+  max-height: 150px;
+  padding: 6px 4px 6px 10px;
+}
+
+
+select[size]::-webkit-scrollbar {
+  width: 8px;
+}
+
+select[size]::-webkit-scrollbar-track {
+  background: var(--card-alt);
+  border-radius: 4px;
+}
+
+select[size]::-webkit-scrollbar-thumb {
+  background: var(--muted);
+  border-radius: 4px;
+}
+
+select[size]::-webkit-scrollbar-thumb:hover {
+  background: var(--primary);
+}
+/* SELECT scroll-bar styling END */
+
 .btn {
   display: inline-block;
   padding: 10px 16px;
