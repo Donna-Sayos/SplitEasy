@@ -40,7 +40,13 @@
         </div>
         <div class="form-group">
           <label for="state-select">State Sales Tax</label>
-          <select id="state-select" {% if not is_guest %}disabled{% endif %}>
+          <select
+            id="state-select"
+            onfocus="this.size=5;"
+            onblur="this.size=1;"
+            onchange="this.size=1; this.blur();"
+            {% if not is_guest %}disabled{% endif %}
+          >
             {% for s in states %}
               <option
                 value="{{ s.state_code }}"

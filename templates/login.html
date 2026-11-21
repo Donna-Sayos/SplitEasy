@@ -63,7 +63,13 @@
           </div>
           <div class="form-group">
             <label for="reg-state">Home State (Auto Tax)</label>
-            <select id="reg-state" required>
+            <select
+              id="reg-state"
+              onfocus="this.size=5;"
+              onblur="this.size=1;"
+              onchange="this.size=1; this.blur();"
+              required
+            >
               <option value="">Loading states...</option>
             </select>
           </div>
