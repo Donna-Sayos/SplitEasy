@@ -112,17 +112,25 @@ def api_register():
 @app.route("/api/login", methods=["POST"])
 def api_login():
     data = request.get_json() or {}
-    email = data.get("email", "").strip().lower()
+    identifier = (data.get("identifier") or data.get("email") or "").strip().lower()
     password = data.get("password", "").strip()
+
+    if not identifier or not password:
+        return jsonify({"error": "Username/email and password are required."}), 400
 
     conn = get_db()
     user = conn.execute(
-        "SELECT user_id, password FROM Users WHERE email = ?", (email,)
+        """
+        SELECT user_id, password
+        FROM Users
+        WHERE LOWER(email) = ? OR LOWER(username) = ?
+        """,
+        (identifier, identifier),
     ).fetchone()
     conn.close()
 
     if not user or user["password"] != password:
-        return jsonify({"error": "Invalid email or password."}), 401
+        return jsonify({"error": "Invalid username/email or password."}), 401
 
     session.clear()
     session["user_id"] = user["user_id"]
