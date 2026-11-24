@@ -365,6 +365,10 @@ select[size]::-webkit-scrollbar-thumb:hover {
   gap: 10px;
 }
 
+.action-row.guest-actions {
+  grid-template-columns: 1fr;
+}
+
 /* History Cards */
 .filter-bar {
   display: grid;

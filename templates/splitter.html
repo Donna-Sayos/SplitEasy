@@ -5,8 +5,45 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SplitEasy — Bill Splitter &amp; Dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <style>
+    .field-error {
+      color: var(--danger);
+      font-size: 0.8rem;
+      font-weight: 500;
+      margin-top: 4px;
+      display: none;
+    }
+    .field-error.visible {
+      display: block;
+    }
+    input.input-invalid,
+    select.input-invalid {
+      border-color: var(--danger) !important;
+      background-color: #fdf8f8;
+    }
+    .item-row-wrap {
+      margin-top: 8px;
+      padding-left: 12px;
+    }
+    .item-row-wrap .item-row {
+      margin-top: 0;
+      padding-left: 0;
+    }
+    .item-errors {
+      display: grid;
+      grid-template-columns: 1.6fr 0.8fr auto;
+      gap: 8px;
+    }
+    .readonly-subtotal {
+      background-color: var(--card-alt) !important;
+      color: var(--muted);
+      font-weight: 600;
+    }
+  </style>
 </head>
 <body data-is-guest="{{ 'true' if is_guest else 'false' }}">
+
+  <!-- Top Navigation -->
   <nav class="navbar">
     <div class="brand">SplitEasy</div>
     <div class="nav-right">
@@ -20,32 +57,38 @@
     </div>
   </nav>
 
+  <!-- Main Workspace -->
   <main class="workspace">
-    <!-- Left Column: Bill Splitter -->
+
+    <!-- Left Column: New Bill Calculator -->
     <section class="card">
       <h2>Create a New Bill to Split</h2>
       <p class="subtext">Choose Equal or Per-Meal splitting, customize tip, and calculate immediately.</p>
 
-      <div id="splitter-alert" class="alert"></div>
+      <div id="calc-alert" class="alert"></div>
 
+      <!-- Mode Toggle -->
       <div class="mode-toggle">
-        <button type="button" id="mode-equal" class="mode-btn active" onclick="setSplitMode('equal')">Split Equally</button>
-        <button type="button" id="mode-itemized" class="mode-btn" onclick="setSplitMode('itemized')">Split Per Meal</button>
+        <button type="button" id="btn-mode-equal" class="mode-btn active" onclick="setSplitMode('equal')">Split Equally</button>
+        <button type="button" id="btn-mode-itemized" class="mode-btn" onclick="setSplitMode('itemized')">Split Per Meal</button>
       </div>
 
+      <!-- Bill Title -->
       <div class="form-group">
-        <label for="bill-title">Bill Title</label>
-        <input type="text" id="bill-title" placeholder="e.g., Thai Dinner, Coffee Run" />
+        <label for="bill-title">Bill Title <span style="color: var(--danger);">*</span></label>
+        <input type="text" id="bill-title" placeholder="e.g., Thai Dinner, Burger Spot" oninput="clearFieldError('bill-title', 'err-bill-title')" />
+        <div id="err-bill-title" class="field-error">Bill title is required.</div>
       </div>
 
+      <!-- State Sales Tax -->
       <div class="form-group">
         <label for="state-select">State Sales Tax</label>
-        <select id="state-select">
+        <select id="state-select" onchange="onStateOrSubtotalChange()">
           {% for s in states %}
             <option
               value="{{ s.state_code }}"
               data-rate="{{ s.tax_rate }}"
-              {% if user and user.state_code == s.state_code %}selected{% endif %}
+              {% if user and user.state_code == s.state_code %}selected{% elif not user and s.state_code == 'NY' %}selected{% endif %}
             >
               {{ s.state_code }} - {{ s.state_name }} ({{ "%.2f"|format(s.tax_rate * 100) }}%)
             </option>
@@ -53,41 +96,49 @@
         </select>
       </div>
 
-      <div class="form-group" id="equal-subtotal-group">
-        <label for="bill-subtotal">Bill Subtotal ($)</label>
-        <input type="number" id="bill-subtotal" step="0.01" min="0" placeholder="0.00" />
+      <!-- Subtotal (Editable in Equal Mode, Auto-Summed in Per-Meal Mode) -->
+      <div class="form-group" id="subtotal-group">
+        <label for="bill-subtotal" id="subtotal-label">Bill Subtotal ($) <span style="color: var(--danger);">*</span></label>
+        <input type="number" id="bill-subtotal" min="0" step="0.01" placeholder="0.00" oninput="clearFieldError('bill-subtotal', 'err-bill-subtotal')" />
+        <div id="err-bill-subtotal" class="field-error">Enter a valid subtotal greater than $0.00.</div>
       </div>
 
+      <!-- Participants -->
       <div class="form-group">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <label style="margin-bottom: 0;">Participants</label>
+          <label style="margin-bottom: 0;">Participants <span style="color: var(--danger);">*</span></label>
           <button type="button" class="btn btn-secondary btn-sm" onclick="addParticipant()">+ Add Person</button>
         </div>
         <div id="participants-container"></div>
+        <div id="err-participants-empty" class="field-error">Add at least one participant.</div>
       </div>
 
+      <!-- Tip Selection -->
       <div class="form-group">
         <label>Select Tip</label>
         <div class="tip-group">
           <button type="button" class="tip-btn active" data-tip="15" onclick="selectTip(15, this)">15%</button>
           <button type="button" class="tip-btn" data-tip="18" onclick="selectTip(18, this)">18%</button>
           <button type="button" class="tip-btn" data-tip="20" onclick="selectTip(20, this)">20%</button>
-          <button type="button" class="tip-btn" data-tip="custom" onclick="selectTip('custom', this)">Custom</button>
+          <button type="button" class="tip-btn" id="btn-tip-custom" data-tip="custom" onclick="selectCustomTip(this)">Custom</button>
         </div>
-        <div id="custom-tip-group" style="display: none; margin-top: 8px;">
-          <input type="number" id="custom-tip-input" step="0.1" min="0" placeholder="Enter custom tip %" />
+        <div id="custom-tip-wrap" style="display: none; margin-top: 8px;">
+          <input type="number" id="custom-tip-input" min="0" step="0.1" placeholder="Enter custom tip %" value="15" oninput="clearFieldError('custom-tip-input', 'err-custom-tip')" />
+          <div id="err-custom-tip" class="field-error">Enter a valid tip percentage (0 or higher).</div>
         </div>
       </div>
 
+      <!-- Live / Calculated Breakdown -->
       <div id="result-box" class="result-box" style="display: none;">
         <div id="result-summary" class="result-summary"></div>
         <div id="result-lines"></div>
       </div>
 
-      <div class="action-row" {% if is_guest %}style="grid-template-columns: 1fr;"{% endif %}>
+      <!-- Actions -->
+      <div class="action-row {% if is_guest %}guest-actions{% endif %}">
         <button type="button" class="btn btn-primary" onclick="calculateSplit()">Calculate Split</button>
         {% if not is_guest %}
-          <button type="button" class="btn btn-secondary" onclick="saveBill()">Save Bill to History</button>
+          <button type="button" id="btn-save-bill" class="btn btn-secondary" onclick="saveBill()">Save Bill to History</button>
         {% endif %}
       </div>
     </section>
@@ -95,6 +146,7 @@
     <!-- Right Column: Previous Bills Dashboard -->
     <section class="card">
       <h2>Previous Bills Dashboard</h2>
+
       {% if is_guest %}
         <div class="locked-box">
           <h3 style="margin-bottom: 8px;">Saved History Unavailable in Guest Mode</h3>
@@ -103,49 +155,117 @@
         </div>
       {% else %}
         <p class="subtext">Filter your saved receipts by date or exact time of entry.</p>
+
         <div class="filter-bar">
-          <input type="date" id="filter-date" />
-          <input type="time" id="filter-time" />
-          <button type="button" class="btn btn-secondary btn-sm" onclick="loadBills()">Filter</button>
+          <input type="date" id="filter-date" aria-label="Filter by date" />
+          <input type="time" id="filter-time" aria-label="Filter by time" />
+          <button type="button" class="btn btn-primary btn-sm" onclick="loadBills()">Filter</button>
         </div>
         <div style="margin-bottom: 14px;">
           <button type="button" class="btn btn-secondary btn-sm" onclick="resetFilters()">Show All Bills</button>
         </div>
-        <div id="history-list"></div>
+
+        <div id="history-list">
+          <p class="subtext">Loading saved bills...</p>
+        </div>
       {% endif %}
     </section>
+
   </main>
 
   <script>
     const IS_GUEST = document.body.dataset.isGuest === "true";
-    let currentMode = "equal";
+    let splitMode = "equal";
     let selectedTip = 15;
-    let lastCalculation = null;
+    let isCustomTip = false;
 
-    function showAlert(msg, type = "error") {
-      const box = document.getElementById("splitter-alert");
+    function showCalcAlert(msg, type) {
+      const box = document.getElementById("calc-alert");
       box.textContent = msg;
       box.className = "alert " + type;
     }
 
-    function clearAlert() {
-      const box = document.getElementById("splitter-alert");
+    function hideCalcAlert() {
+      const box = document.getElementById("calc-alert");
       box.textContent = "";
       box.className = "alert";
     }
 
-    function setSplitMode(mode) {
-      currentMode = mode;
-      document.getElementById("mode-equal").classList.toggle("active", mode === "equal");
-      document.getElementById("mode-itemized").classList.toggle("active", mode === "itemized");
-      document.getElementById("equal-subtotal-group").style.display = mode === "equal" ? "block" : "none";
+    function setFieldError(inputEl, errorEl, message) {
+      if (inputEl) {
+        inputEl.classList.add("input-invalid");
+      }
+      if (errorEl) {
+        if (message) errorEl.textContent = message;
+        errorEl.classList.add("visible");
+      }
+    }
 
-      document.querySelectorAll(".items-wrapper").forEach(el => {
-        el.style.display = mode === "itemized" ? "block" : "none";
+    function clearFieldError(inputOrId, errorOrId) {
+      const inputEl = typeof inputOrId === "string" ? document.getElementById(inputOrId) : inputOrId;
+      const errorEl = typeof errorOrId === "string" ? document.getElementById(errorOrId) : errorOrId;
+      if (inputEl) {
+        inputEl.classList.remove("input-invalid");
+      }
+      if (errorEl) {
+        errorEl.classList.remove("visible");
+      }
+    }
+
+    function clearAllValidationErrors() {
+      hideCalcAlert();
+      document.querySelectorAll(".input-invalid").forEach((el) => el.classList.remove("input-invalid"));
+      document.querySelectorAll(".field-error").forEach((el) => el.classList.remove("visible"));
+    }
+
+    function setSplitMode(mode) {
+      splitMode = mode;
+      document.getElementById("btn-mode-equal").classList.toggle("active", mode === "equal");
+      document.getElementById("btn-mode-itemized").classList.toggle("active", mode === "itemized");
+
+      const subtotalInput = document.getElementById("bill-subtotal");
+      const subtotalLabel = document.getElementById("subtotal-label");
+
+      if (mode === "equal") {
+        subtotalInput.readOnly = false;
+        subtotalInput.classList.remove("readonly-subtotal");
+        subtotalInput.placeholder = "0.00";
+        subtotalLabel.innerHTML = 'Bill Subtotal ($) <span style="color: var(--danger);">*</span>';
+      } else {
+        subtotalInput.readOnly = true;
+        subtotalInput.classList.add("readonly-subtotal");
+        subtotalLabel.innerHTML = 'Calculated Subtotal ($) <span style="color: var(--danger);">*</span>';
+        recalculateItemizedSubtotal();
+      }
+
+      document.querySelectorAll(".participant-box").forEach((box) => {
+        const itemsSection = box.querySelector(".items-section");
+        if (itemsSection) {
+          itemsSection.style.display = mode === "itemized" ? "block" : "none";
+          if (mode === "itemized" && itemsSection.querySelectorAll(".item-row-wrap").length === 0) {
+            addItemRow(itemsSection.querySelector(".items-list"), box);
+          }
+        }
       });
-      document.querySelectorAll(".add-item-btn").forEach(btn => {
-        btn.style.display = mode === "itemized" ? "inline-block" : "none";
+
+      clearAllValidationErrors();
+      document.getElementById("result-box").style.display = "none";
+    }
+
+    function recalculateItemizedSubtotal() {
+      if (splitMode !== "itemized") return;
+      let sum = 0;
+      document.querySelectorAll(".participant-box .item-price").forEach((inp) => {
+        const val = parseFloat(inp.value);
+        if (!isNaN(val) && val > 0) {
+          sum += val;
+        }
       });
+      const subtotalInput = document.getElementById("bill-subtotal");
+      subtotalInput.value = sum > 0 ? sum.toFixed(2) : "";
+      if (sum > 0) {
+        clearFieldError(subtotalInput, document.getElementById("err-bill-subtotal"));
+      }
     }
 
     function updateParticipantNumbers() {
@@ -158,97 +278,211 @@
       });
     }
 
-    function addParticipant(defaultName = "") {
+    function addParticipant() {
+      clearFieldError(null, "err-participants-empty");
+
       const container = document.getElementById("participants-container");
       const box = document.createElement("div");
       box.className = "participant-box";
 
       box.innerHTML = `
         <div class="participant-header">
-          <input type="text" class="participant-name" value="${defaultName}" placeholder="Person Name" />
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm add-item-btn"
-            style="display: ${currentMode === 'itemized' ? 'inline-block' : 'none'}; white-space: nowrap;"
-            onclick="addItemRow(this)"
-          >+ Item</button>
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm"
-            onclick="removeParticipant(this)"
-            title="Remove participant"
-          >&times;</button>
+          <input type="text" class="participant-name" placeholder="Person Name" />
+          <button type="button" class="btn btn-secondary btn-sm btn-remove-person" title="Remove person">&times;</button>
         </div>
-        <div class="items-wrapper" style="display: ${currentMode === 'itemized' ? 'block' : 'none'};"></div>
+        <div class="field-error err-participant-name">Participant name is required.</div>
+        <div class="items-section" style="display: ${splitMode === "itemized" ? "block" : "none"}; margin-top: 8px;">
+          <div class="items-list"></div>
+          <div class="field-error err-participant-items">Add at least one food or drink item.</div>
+          <button type="button" class="btn btn-secondary btn-sm btn-add-item" style="margin-top: 8px; margin-left: 12px;">+ Add Food / Drink</button>
+        </div>
       `;
+
+      const nameInput = box.querySelector(".participant-name");
+      const nameErr = box.querySelector(".err-participant-name");
+      nameInput.addEventListener("input", () => {
+        clearFieldError(nameInput, nameErr);
+      });
+
+      box.querySelector(".btn-remove-person").addEventListener("click", () => {
+        box.remove();
+        updateParticipantNumbers();
+        recalculateItemizedSubtotal();
+        document.getElementById("result-box").style.display = "none";
+      });
+
+      const itemsList = box.querySelector(".items-list");
+      const itemsErr = box.querySelector(".err-participant-items");
+      box.querySelector(".btn-add-item").addEventListener("click", () => {
+        clearFieldError(null, itemsErr);
+        addItemRow(itemsList, box);
+      });
+
+      if (splitMode === "itemized") {
+        addItemRow(itemsList, box);
+      }
 
       container.appendChild(box);
       updateParticipantNumbers();
     }
 
-    function removeParticipant(btn) {
-      const box = btn.closest(".participant-box");
-      if (box) {
-        box.remove();
-        updateParticipantNumbers();
+    function addItemRow(itemsList, participantBox) {
+      const wrap = document.createElement("div");
+      wrap.className = "item-row-wrap";
+      wrap.innerHTML = `
+        <div class="item-row">
+          <input type="text" class="item-name" placeholder="Food or drink item" />
+          <input type="number" class="item-price" min="0" step="0.01" placeholder="0.00" />
+          <button type="button" class="btn btn-secondary btn-sm btn-remove-item" title="Remove item">&times;</button>
+        </div>
+        <div class="item-errors">
+          <div class="field-error err-item-name">Item name is required.</div>
+          <div class="field-error err-item-price">Price &gt; $0.00 required.</div>
+          <div></div>
+        </div>
+      `;
+
+      const itemNameInput = wrap.querySelector(".item-name");
+      const itemPriceInput = wrap.querySelector(".item-price");
+      const itemNameErr = wrap.querySelector(".err-item-name");
+      const itemPriceErr = wrap.querySelector(".err-item-price");
+
+      itemNameInput.addEventListener("input", () => {
+        clearFieldError(itemNameInput, itemNameErr);
+      });
+
+      itemPriceInput.addEventListener("input", () => {
+        clearFieldError(itemPriceInput, itemPriceErr);
+        recalculateItemizedSubtotal();
+      });
+
+      wrap.querySelector(".btn-remove-item").addEventListener("click", () => {
+        wrap.remove();
+        recalculateItemizedSubtotal();
+        document.getElementById("result-box").style.display = "none";
+      });
+
+      itemsList.appendChild(wrap);
+      if (participantBox) {
+        const itemsErr = participantBox.querySelector(".err-participant-items");
+        clearFieldError(null, itemsErr);
       }
     }
 
-    function addItemRow(btn) {
-      const box = btn.closest(".participant-box");
-      const wrapper = box.querySelector(".items-wrapper");
-      const row = document.createElement("div");
-      row.className = "item-row";
-      row.innerHTML = `
-        <input type="text" class="item-name" placeholder="Food or drink" />
-        <input type="number" class="item-price" step="0.01" min="0" placeholder="0.00" />
-        <button type="button" class="btn btn-secondary btn-sm" onclick="this.parentElement.remove()">&times;</button>
-      `;
-      wrapper.appendChild(row);
+    function selectTip(percent, btn) {
+      isCustomTip = false;
+      selectedTip = percent;
+      document.querySelectorAll(".tip-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("custom-tip-wrap").style.display = "none";
+      clearFieldError("custom-tip-input", "err-custom-tip");
     }
 
-    function selectTip(val, btn) {
-      selectedTip = val;
-      document.querySelectorAll(".tip-btn").forEach(b => b.classList.remove("active"));
+    function selectCustomTip(btn) {
+      isCustomTip = true;
+      document.querySelectorAll(".tip-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
-      document.getElementById("custom-tip-group").style.display = val === "custom" ? "block" : "none";
+      document.getElementById("custom-tip-wrap").style.display = "block";
     }
 
     function getTipPercent() {
-      if (selectedTip === "custom") {
-        const customVal = parseFloat(document.getElementById("custom-tip-input").value);
-        return isNaN(customVal) || customVal < 0 ? 0 : customVal;
-      }
-      return Number(selectedTip);
+      if (!isCustomTip) return selectedTip;
+      const raw = document.getElementById("custom-tip-input").value.trim();
+      if (raw === "") return NaN;
+      return parseFloat(raw);
     }
 
-    function gatherFormData() {
-      const stateSelect = document.getElementById("state-select");
-      const selectedOption = stateSelect.options[stateSelect.selectedIndex];
-      const stateCode = stateSelect.value;
-      const taxRate = parseFloat(selectedOption.dataset.rate) || 0;
+    function getSelectedTaxRate() {
+      const sel = document.getElementById("state-select");
+      const opt = sel.options[sel.selectedIndex];
+      return parseFloat(opt.dataset.rate || "0");
+    }
+
+    function onStateOrSubtotalChange() {
+      if (document.getElementById("result-box").style.display !== "none") {
+        calculateSplit();
+      }
+    }
+
+    function validateAndGatherData() {
+      clearAllValidationErrors();
+      let isValid = true;
+
+      // 1. Validate Bill Title (required in both Equal and Per-Meal modes)
+      const titleInput = document.getElementById("bill-title");
+      const titleErr = document.getElementById("err-bill-title");
+      const billTitle = titleInput.value.trim();
+      if (!billTitle) {
+        setFieldError(titleInput, titleErr, "Bill title is required.");
+        isValid = false;
+      }
+
+      // 2. Validate Tip (if custom)
       const tipPercent = getTipPercent();
-      const billTitle = document.getElementById("bill-title").value.trim() || "Untitled Bill";
+      if (isNaN(tipPercent) || tipPercent < 0) {
+        setFieldError(
+          document.getElementById("custom-tip-input"),
+          document.getElementById("err-custom-tip"),
+          "Enter a valid tip percentage (0 or higher)."
+        );
+        isValid = false;
+      }
 
+      // 3. Validate Participants (& Items if Per-Meal)
       const boxes = document.querySelectorAll("#participants-container .participant-box");
+      const emptyPartErr = document.getElementById("err-participants-empty");
+      if (boxes.length === 0) {
+        setFieldError(null, emptyPartErr, "Add at least one participant.");
+        isValid = false;
+      }
+
       const participants = [];
+      let itemizedSubtotal = 0;
 
-      boxes.forEach((box, idx) => {
+      boxes.forEach((box) => {
         const nameInput = box.querySelector(".participant-name");
-        const name = nameInput.value.trim() || `Person ${idx + 1}`;
-        const items = [];
+        const nameErr = box.querySelector(".err-participant-name");
+        const name = nameInput.value.trim();
 
-        if (currentMode === "itemized") {
-          box.querySelectorAll(".item-row").forEach(row => {
-            const itemName = row.querySelector(".item-name").value.trim();
-            const itemPrice = parseFloat(row.querySelector(".item-price").value) || 0;
-            if (itemName || itemPrice > 0) {
-              items.push({
-                item_name: itemName || "Item",
-                item_price: itemPrice
-              });
-            }
-          });
+        if (!name) {
+          setFieldError(nameInput, nameErr, "Participant name is required.");
+          isValid = false;
+        }
+
+        const items = [];
+        if (splitMode === "itemized") {
+          const itemWraps = box.querySelectorAll(".item-row-wrap");
+          const itemsErr = box.querySelector(".err-participant-items");
+
+          if (itemWraps.length === 0) {
+            setFieldError(null, itemsErr, "Add at least one food or drink item.");
+            isValid = false;
+          } else {
+            itemWraps.forEach((wrap) => {
+              const iNameInput = wrap.querySelector(".item-name");
+              const iPriceInput = wrap.querySelector(".item-price");
+              const iNameErr = wrap.querySelector(".err-item-name");
+              const iPriceErr = wrap.querySelector(".err-item-price");
+
+              const itemName = iNameInput.value.trim();
+              const rawPrice = iPriceInput.value.trim();
+              const itemPrice = parseFloat(rawPrice);
+
+              if (!itemName) {
+                setFieldError(iNameInput, iNameErr, "Item name is required.");
+                isValid = false;
+              }
+              if (rawPrice === "" || isNaN(itemPrice) || itemPrice <= 0) {
+                setFieldError(iPriceInput, iPriceErr, "Price must be greater than $0.00.");
+                isValid = false;
+              }
+
+              if (itemName && !isNaN(itemPrice) && itemPrice > 0) {
+                items.push({ item_name: itemName, item_price: round2(itemPrice) });
+                itemizedSubtotal += itemPrice;
+              }
+            });
+          }
         }
 
         participants.push({
@@ -257,149 +491,210 @@
         });
       });
 
+      // 4. Validate Subtotal
+      const subtotalInput = document.getElementById("bill-subtotal");
+      const subtotalErr = document.getElementById("err-bill-subtotal");
+      let subtotal = 0;
+
+      if (splitMode === "equal") {
+        const rawSub = subtotalInput.value.trim();
+        subtotal = parseFloat(rawSub);
+        if (rawSub === "" || isNaN(subtotal) || subtotal <= 0) {
+          setFieldError(subtotalInput, subtotalErr, "Bill subtotal is required and must be greater than $0.00.");
+          isValid = false;
+        }
+      } else {
+        recalculateItemizedSubtotal();
+        subtotal = round2(itemizedSubtotal);
+        if (subtotal <= 0) {
+          setFieldError(subtotalInput, subtotalErr, "Subtotal must be greater than $0.00 (add valid item prices above).");
+          isValid = false;
+        }
+      }
+
+      if (!isValid) {
+        return null;
+      }
+
       return {
         bill_title: billTitle,
-        split_mode: currentMode,
-        state_code: stateCode,
-        tax_rate: taxRate,
+        split_mode: splitMode,
+        subtotal: round2(subtotal),
         tip_percent: tipPercent,
+        state_code: document.getElementById("state-select").value,
         participants: participants
       };
     }
 
-    function calculateSplit() {
-      clearAlert();
-      const data = gatherFormData();
+    function round2(n) {
+      return Math.round((n + Number.EPSILON) * 100) / 100;
+    }
 
-      if (data.participants.length === 0) {
-        showAlert("Please add at least one participant.", "error");
+    function calculateSplit() {
+      const payload = validateAndGatherData();
+      if (!payload) {
+        document.getElementById("result-box").style.display = "none";
         return null;
       }
 
-      const numPeople = data.participants.length;
-      let subtotal = 0;
-
-      if (data.split_mode === "equal") {
-        subtotal = parseFloat(document.getElementById("bill-subtotal").value);
-        if (isNaN(subtotal) || subtotal <= 0) {
-          showAlert("Please enter a valid bill subtotal greater than $0.", "error");
-          return null;
-        }
-      } else {
-        data.participants.forEach(p => {
-          p.person_sub = p.items.reduce((sum, item) => sum + item.item_price, 0);
-          subtotal += p.person_sub;
-        });
-        if (subtotal <= 0) {
-          showAlert("Please add at least one food or drink item with a price greater than $0.", "error");
-          return null;
-        }
-      }
-
-      const taxAmount = subtotal * data.tax_rate;
-      const tipAmount = subtotal * (data.tip_percent / 100);
-      const totalAmount = subtotal + taxAmount + tipAmount;
-      const sharedExtras = (taxAmount + tipAmount) / numPeople;
-
-      data.participants.forEach(p => {
-        if (data.split_mode === "equal") {
-          p.owed_amount = totalAmount / numPeople;
-        } else {
-          p.owed_amount = p.person_sub + sharedExtras;
-        }
-      });
-
-      data.subtotal = Number(subtotal.toFixed(2));
-      lastCalculation = data;
+      const taxRate = getSelectedTaxRate();
+      const taxAmount = round2(payload.subtotal * taxRate);
+      const tipAmount = round2(payload.subtotal * (payload.tip_percent / 100));
+      const grandTotal = round2(payload.subtotal + taxAmount + tipAmount);
+      const numPeople = payload.participants.length;
 
       const summaryEl = document.getElementById("result-summary");
-      summaryEl.textContent =
-        `Subtotal: $${subtotal.toFixed(2)} | ${data.state_code} Tax (${(data.tax_rate * 100).toFixed(2)}%): $${taxAmount.toFixed(2)} ` +
-        `| Tip (${data.tip_percent}%): $${tipAmount.toFixed(2)} | Grand Total: $${totalAmount.toFixed(2)}`;
-
       const linesEl = document.getElementById("result-lines");
       linesEl.innerHTML = "";
-      data.participants.forEach(p => {
-        const line = document.createElement("div");
-        line.className = "result-line";
-        line.innerHTML = `<span>${p.participant_name}</span><span>$${p.owed_amount.toFixed(2)}</span>`;
-        linesEl.appendChild(line);
-      });
+
+      summaryEl.textContent = `${payload.bill_title} • Subtotal: $${payload.subtotal.toFixed(2)} | Tax (${(taxRate * 100).toFixed(2)}%): $${taxAmount.toFixed(2)} | Tip (${payload.tip_percent}%): $${tipAmount.toFixed(2)} | Grand Total: $${grandTotal.toFixed(2)}`;
+
+      if (payload.split_mode === "equal") {
+        const evenShare = round2(grandTotal / numPeople);
+        payload.participants.forEach((p) => {
+          const line = document.createElement("div");
+          line.className = "result-line";
+          line.innerHTML = `<span>${escapeHtml(p.participant_name)}</span><span>$${evenShare.toFixed(2)}</span>`;
+          linesEl.appendChild(line);
+        });
+      } else {
+        const sharedExtras = (taxAmount + tipAmount) / numPeople;
+        payload.participants.forEach((p) => {
+          const personSub = p.items.reduce((acc, i) => acc + i.item_price, 0);
+          const owed = round2(personSub + sharedExtras);
+          const line = document.createElement("div");
+          line.className = "result-line";
+          line.innerHTML = `<span>${escapeHtml(p.participant_name)} <small style="color: var(--muted); font-weight: 400;">(Items: $${personSub.toFixed(2)})</small></span><span>$${owed.toFixed(2)}</span>`;
+          linesEl.appendChild(line);
+        });
+      }
 
       document.getElementById("result-box").style.display = "block";
-      return data;
+      return payload;
     }
 
     async function saveBill() {
-      const calc = calculateSplit();
-      if (!calc) return;
-
-      const res = await fetch("/api/bills", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(calc)
-      });
-
-      const result = await res.json();
-      if (res.ok) {
-        showAlert("Bill saved to your dashboard!", "success");
-        loadBills();
-      } else {
-        showAlert(result.error || "Failed to save bill.", "error");
+      if (IS_GUEST) {
+        showCalcAlert("Guest users cannot save bills. Please log in or create an account.", "error");
+        return;
       }
+
+      // Validate inline FIRST — if invalid, display field errors and DO NOT invoke the API
+      const payload = calculateSplit();
+      if (!payload) {
+        return;
+      }
+
+      const saveBtn = document.getElementById("btn-save-bill");
+      if (saveBtn) saveBtn.disabled = true;
+
+      try {
+        const res = await fetch("/api/bills", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          showCalcAlert(data.error || "Failed to save bill.", "error");
+          return;
+        }
+
+        showCalcAlert("Bill saved to your history!", "success");
+        resetFormAfterSave();
+        loadBills();
+      } catch (err) {
+        showCalcAlert("Network error while saving bill.", "error");
+      } finally {
+        if (saveBtn) saveBtn.disabled = false;
+      }
+    }
+
+    function resetFormAfterSave() {
+      document.getElementById("bill-title").value = "";
+      document.getElementById("bill-subtotal").value = "";
+      document.getElementById("participants-container").innerHTML = "";
+      document.getElementById("result-box").style.display = "none";
+      clearAllValidationErrors();
     }
 
     async function loadBills() {
       if (IS_GUEST) return;
+
       const dateVal = document.getElementById("filter-date").value;
       const timeVal = document.getElementById("filter-time").value;
-
       const params = new URLSearchParams();
       if (dateVal) params.append("date", dateVal);
       if (timeVal) params.append("time", timeVal);
 
-      const res = await fetch(`/api/bills?${params.toString()}`);
+      const url = "/api/bills" + (params.toString() ? "?" + params.toString() : "");
       const listEl = document.getElementById("history-list");
 
-      if (!res.ok) {
-        listEl.innerHTML = `<p class="subtext">Unable to load saved bills.</p>`;
-        return;
-      }
+      try {
+        const res = await fetch(url);
+        const bills = await res.json();
 
-      const bills = await res.json();
-      if (bills.length === 0) {
-        listEl.innerHTML = `<p class="subtext">No saved bills found.</p>`;
-        return;
-      }
+        if (!res.ok) {
+          listEl.innerHTML = `<p class="subtext">${escapeHtml(bills.error || "Unable to load bills.")}</p>`;
+          return;
+        }
 
-      listEl.innerHTML = bills.map(b => {
-        const modeLabel = b.split_mode === "itemized" ? "Per Meal" : "Split Equally";
-        const partsHtml = b.participants.map(p => {
-          const itemsText = (p.items && p.items.length > 0)
-            ? `: ${p.items.map(i => `${i.item_name} ($${Number(i.item_price).toFixed(2)})`).join(", ")}`
-            : "";
-          return `<div class="history-part"><strong>${p.participant_name}</strong> ($${Number(p.owed_amount).toFixed(2)})${itemsText}</div>`;
-        }).join("");
+        if (bills.length === 0) {
+          listEl.innerHTML = `<p class="subtext">No saved bills found.</p>`;
+          return;
+        }
 
-        return `
-          <div class="history-card">
+        listEl.innerHTML = "";
+        bills.forEach((b) => {
+          const card = document.createElement("div");
+          card.className = "history-card";
+          const modeLabel = b.split_mode === "itemized" ? "Per Meal" : "Split Equally";
+
+          let partsHtml = "";
+          (b.participants || []).forEach((p) => {
+            let itemsText = "";
+            if (p.items && p.items.length > 0) {
+              const list = p.items.map((i) => `${escapeHtml(i.item_name)} ($${Number(i.item_price).toFixed(2)})`).join(", ");
+              itemsText = ` — <span style="color: var(--muted);">${list}</span>`;
+            }
+            partsHtml += `
+              <div class="history-part">
+                <strong>${escapeHtml(p.participant_name)}</strong>: $${Number(p.owed_amount).toFixed(2)}${itemsText}
+              </div>
+            `;
+          });
+
+          card.innerHTML = `
             <div class="history-top">
-              <span>${b.bill_title} [${modeLabel}]</span>
+              <span>${escapeHtml(b.bill_title)} <small style="font-weight: 500; color: var(--muted);">[${modeLabel}]</small></span>
               <span>$${Number(b.total_amount).toFixed(2)}</span>
             </div>
             <div class="history-meta">
-              Logged: ${b.entry_timestamp} &bull; Subtotal: $${Number(b.subtotal).toFixed(2)} &bull; Tax: $${Number(b.tax_amount).toFixed(2)} &bull; Tip (${b.tip_percent}%): $${Number(b.tip_amount).toFixed(2)}
+              Logged: ${escapeHtml(b.entry_timestamp)} &bull; Subtotal: $${Number(b.subtotal).toFixed(2)} | Tax: $${Number(b.tax_amount).toFixed(2)} | Tip (${Number(b.tip_percent)}%): $${Number(b.tip_amount).toFixed(2)}
             </div>
             ${partsHtml}
-          </div>
-        `;
-      }).join("");
+          `;
+          listEl.appendChild(card);
+        });
+      } catch (err) {
+        listEl.innerHTML = `<p class="subtext">Error loading saved bills.</p>`;
+      }
     }
 
     function resetFilters() {
       document.getElementById("filter-date").value = "";
       document.getElementById("filter-time").value = "";
       loadBills();
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
     }
 
     document.addEventListener("DOMContentLoaded", () => {
