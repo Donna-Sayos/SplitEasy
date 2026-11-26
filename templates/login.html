@@ -3,165 +3,182 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SplitEasy — Sign In or Guest Access</title>
+  <title>SplitEasy — Sign In or Quick Split</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
-<body>
-  <nav class="navbar">
+<body class="auth-body">
+  <header class="navbar">
     <div class="brand">SplitEasy</div>
     <div class="nav-right">
-      <span class="subtext" style="margin:0;">Group Bill & Meal Splitter</span>
+      <span class="nav-tagline">Group Bill &amp; Meal Splitter</span>
     </div>
-  </nav>
+  </header>
 
-  <main class="auth-container">
-    <!-- Guest Quick Access -->
-    <section class="card guest-card">
-      <div>
-        <h2>Quick Split (No Account)</h2>
-        <p class="subtext">
-          Just need to calculate a restaurant or group bill right now? Jump straight into the calculator without signing up.
-        </p>
-        <ul style="padding-left: 18px; font-size: 0.9rem; color: var(--muted); margin-bottom: 20px;">
-          <li>Split Equally or Per Meal (Foods & Drinks)</li>
-          <li>Pick any US state sales tax rate</li>
-          <li>15%, 18%, 20%, or Custom tip options</li>
-          <li><em>Note: Guest calculations are not saved to history.</em></li>
-        </ul>
-      </div>
-      <a href="/guest" class="btn btn-secondary" style="width:100%;">Continue as Guest →</a>
-    </section>
-
-    <!-- Login / Sign Up Card -->
-    <section class="card">
-      <div class="tabs">
-        <button type="button" class="tab-btn active" id="tab-login" onclick="switchTab('login')">Log In</button>
-        <button type="button" class="tab-btn" id="tab-signup" onclick="switchTab('signup')">Create Account</button>
+  <main class="auth-wrapper">
+    <div class="auth-card">
+      <div class="auth-header">
+        <h1 id="auth-title">Welcome back</h1>
+        <p id="auth-subtitle" class="subtext">Sign in to access your saved bills and automatic state tax.</p>
       </div>
 
-      <div id="auth-alert" class="alert"></div>
+      <!-- Segmented Tab Switcher -->
+      <div class="segmented-tabs" role="tablist">
+        <button type="button" id="tab-login" class="seg-btn active" onclick="switchTab('login')">Log In</button>
+        <button type="button" id="tab-register" class="seg-btn" onclick="switchTab('register')">Create Account</button>
+      </div>
 
-      <!-- Login Form -->
+      <!-- Alert Message -->
+      <div id="auth-alert" class="alert" role="alert"></div>
+
+      <!-- Log In Form -->
       <form id="login-form" onsubmit="handleLogin(event)">
         <div class="form-group">
           <label for="login-identifier">Username or Email</label>
-          <input type="text" id="login-identifier" placeholder="alex_m or alex@uni.edu" required />
+          <input type="text" id="login-identifier" placeholder="alex_m or alex@uni.edu" autocomplete="username" required />
         </div>
         <div class="form-group">
           <label for="login-password">Password</label>
-          <input type="password" id="login-password" placeholder="Enter your password" required />
+          <input type="password" id="login-password" placeholder="Enter your password" autocomplete="current-password" required />
         </div>
-        <button type="submit" class="btn btn-primary">Log In & View Dashboard</button>
+        <button type="submit" class="btn btn-primary">Log In &amp; View Dashboard</button>
       </form>
 
-      <!-- Sign Up Form -->
-      <form id="signup-form" style="display:none;" onsubmit="handleSignup(event)">
+      <!-- Create Account Form -->
+      <form id="register-form" class="hidden" onsubmit="handleRegister(event)">
+        <div class="form-group">
+          <label for="reg-username">Username</label>
+          <input type="text" id="reg-username" placeholder="alex_m" autocomplete="username" required />
+        </div>
+        <div class="form-group">
+          <label for="reg-email">Email Address</label>
+          <input type="email" id="reg-email" placeholder="alex@uni.edu" autocomplete="email" required />
+        </div>
         <div class="form-row">
           <div class="form-group">
-            <label for="reg-username">Username</label>
-            <input type="text" id="reg-username" placeholder="alex_m" required />
+            <label for="reg-password">Password</label>
+            <input type="password" id="reg-password" placeholder="Create password" autocomplete="new-password" required />
           </div>
           <div class="form-group">
             <label for="reg-state">Home State (Auto Tax)</label>
-            <select
-              id="reg-state"
-              onfocus="this.size=5;"
-              onblur="this.size=1;"
-              onchange="this.size=1; this.blur();"
-              required
-            >
+            <select id="reg-state" required>
               <option value="">Loading states...</option>
             </select>
           </div>
         </div>
-        <div class="form-group">
-          <label for="reg-email">Email Address</label>
-          <input type="email" id="reg-email" placeholder="alex@uni.edu" required />
-        </div>
-        <div class="form-group">
-          <label for="reg-password">Password</label>
-          <input type="password" id="reg-password" placeholder="Choose a password" required />
-        </div>
-        <button type="submit" class="btn btn-primary">Create Account</button>
+        <button type="submit" class="btn btn-primary">Create Account &amp; Start</button>
       </form>
-    </section>
+
+      <!-- Divider -->
+      <div class="auth-divider">
+        <span>or split immediately without an account</span>
+      </div>
+
+      <!-- Guest Mode Footer Box -->
+      <div class="guest-strip">
+        <div class="guest-strip-info">
+          <strong>Continue as Guest</strong>
+          <span>Split equally or per meal with custom state tax &amp; tip. History is not saved.</span>
+        </div>
+        <a href="{{ url_for('guest_mode') }}" class="btn btn-secondary guest-btn">Quick Split &rarr;</a>
+      </div>
+    </div>
   </main>
 
   <script>
-    // Populate states dropdown from REST API
-    fetch("/api/states")
-      .then((res) => res.json())
-      .then((states) => {
-        const select = document.getElementById("reg-state");
-        select.innerHTML = states
-          .map(
-            (s) =>
-              `<option value="${s.state_code}" ${s.state_code === "NY" ? "selected" : ""}>
-                ${s.state_code} - ${s.state_name} (${(s.tax_rate * 100).toFixed(2)}%)
-              </option>`
-          )
-          .join("");
-      });
+    function showAlert(message, type) {
+      const box = document.getElementById("auth-alert");
+      box.textContent = message;
+      box.className = "alert " + type;
+    }
+
+    function clearAlert() {
+      const box = document.getElementById("auth-alert");
+      box.textContent = "";
+      box.className = "alert";
+    }
 
     function switchTab(tab) {
-      const alertBox = document.getElementById("auth-alert");
-      alertBox.className = "alert";
-      if (tab === "login") {
-        document.getElementById("login-form").style.display = "block";
-        document.getElementById("signup-form").style.display = "none";
-        document.getElementById("tab-login").classList.add("active");
-        document.getElementById("tab-signup").classList.remove("active");
-      } else {
-        document.getElementById("login-form").style.display = "none";
-        document.getElementById("signup-form").style.display = "block";
-        document.getElementById("tab-login").classList.remove("active");
-        document.getElementById("tab-signup").classList.add("active");
+      clearAlert();
+      const isLogin = tab === "login";
+
+      document.getElementById("tab-login").classList.toggle("active", isLogin);
+      document.getElementById("tab-register").classList.toggle("active", !isLogin);
+
+      document.getElementById("login-form").classList.toggle("hidden", !isLogin);
+      document.getElementById("register-form").classList.toggle("hidden", isLogin);
+
+      document.getElementById("auth-title").textContent = isLogin ? "Welcome back" : "Create your account";
+      document.getElementById("auth-subtitle").textContent = isLogin
+        ? "Sign in to access your saved bills and automatic state tax."
+        : "Save timestamped receipts and auto-apply your home state sales tax.";
+    }
+
+    async function loadStates() {
+      const select = document.getElementById("reg-state");
+      try {
+        const res = await fetch("/api/states");
+        const states = await res.json();
+        select.innerHTML = '<option value="">Select state...</option>';
+        states.forEach((s) => {
+          const opt = document.createElement("option");
+          opt.value = s.state_code;
+          opt.textContent = `${s.state_code} - ${s.state_name} (${(s.tax_rate * 100).toFixed(2)}%)`;
+          select.appendChild(opt);
+        });
+      } catch (err) {
+        select.innerHTML = '<option value="">Could not load states</option>';
       }
     }
 
     async function handleLogin(e) {
       e.preventDefault();
-      const identifier = document.getElementById("login-identifier").value;
+      clearAlert();
+      const identifier = document.getElementById("login-identifier").value.trim();
       const password = document.getElementById("login-password").value;
 
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, password })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        window.location.href = data.redirect;
-      } else {
-        showAlert(data.error || "Login failed.", "error");
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ identifier, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          window.location.href = data.redirect;
+        } else {
+          showAlert(data.error || "Login failed.", "error");
+        }
+      } catch (err) {
+        showAlert("Network error. Please try again.", "error");
       }
     }
 
-    async function handleSignup(e) {
+    async function handleRegister(e) {
       e.preventDefault();
-      const res = await fetch("/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: document.getElementById("reg-username").value,
-          state_code: document.getElementById("reg-state").value,
-          email: document.getElementById("reg-email").value,
-          password: document.getElementById("reg-password").value,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        window.location.href = data.redirect;
-      } else {
-        showAlert(data.error || "Sign up failed.", "error");
+      clearAlert();
+      const username = document.getElementById("reg-username").value.trim();
+      const email = document.getElementById("reg-email").value.trim();
+      const password = document.getElementById("reg-password").value;
+      const state_code = document.getElementById("reg-state").value;
+
+      try {
+        const res = await fetch("/api/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, email, password, state_code })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          window.location.href = data.redirect;
+        } else {
+          showAlert(data.error || "Could not create account.", "error");
+        }
+      } catch (err) {
+        showAlert("Network error. Please try again.", "error");
       }
     }
 
-    function showAlert(msg, type) {
-      const box = document.getElementById("auth-alert");
-      box.textContent = msg;
-      box.className = `alert ${type}`;
-    }
+    document.addEventListener("DOMContentLoaded", loadStates);
   </script>
 </body>
 </html>

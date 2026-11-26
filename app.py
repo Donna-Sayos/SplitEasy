@@ -21,8 +21,9 @@ def get_db():
 
 @app.route("/")
 def index():
-    if "user_id" in session or session.get("is_guest"):
+    if "user_id" in session:
         return redirect(url_for("splitter"))
+    session.pop("is_guest", None)
     return render_template("login.html")
 
 
@@ -192,7 +193,7 @@ def api_create_bill():
     data = request.get_json() or {}
     bill_title = data.get("bill_title", "").strip() or "Untitled Bill"
     split_mode = data.get("split_mode", "equal")
-    tip_percent = float(data.get("tip_percent", 0))
+    tip_percent = float(data.get("tip_percent") or 0)
     state_code = data.get("state_code", "").strip().upper()
     participants = data.get("participants", [])
 
@@ -208,7 +209,7 @@ def api_create_bill():
     num_people = len(participants)
 
     if split_mode == "equal":
-        subtotal = round(float(data.get("subtotal", 0)), 2)
+        subtotal = round(float(data.get("subtotal") or 0), 2)
         tax_amount = round(subtotal * tax_rate, 2)
         tip_amount = round(subtotal * (tip_percent / 100.0), 2)
         total_amount = round(subtotal + tax_amount + tip_amount, 2)
@@ -220,7 +221,7 @@ def api_create_bill():
         subtotal = 0.0
         for p in participants:
             items = p.get("items", [])
-            person_sub = sum(float(i.get("item_price", 0)) for i in items)
+            person_sub = sum(float(i.get("item_price") or 0) for i in items)
             p["person_sub"] = person_sub
             subtotal += person_sub
 
@@ -264,7 +265,7 @@ def api_create_bill():
         if split_mode == "itemized":
             for item in p.get("items", []):
                 name = item.get("item_name", "").strip()
-                price = float(item.get("item_price", 0))
+                price = float(item.get("item_price") or 0)
                 if name:
                     conn.execute(
                         "INSERT INTO ParticipantItems (participant_id, item_name, item_price) VALUES (?, ?, ?)",
