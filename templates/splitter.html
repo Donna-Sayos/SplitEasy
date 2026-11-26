@@ -35,7 +35,7 @@
 
       <div class="form-group">
         <label for="bill-title">Bill Title *</label>
-        <input type="text" id="bill-title" placeholder="e.g., Thai Dinner, Burger Spot" oninput="clearFieldError('bill-title'); recalculateIfVisible()" />
+        <input type="text" id="bill-title" placeholder="e.g., Pizza Party, Thai Dinner" oninput="clearFieldError('bill-title'); recalculateIfVisible()" />
         <small id="err-bill-title" class="field-error">Please enter a bill title.</small>
       </div>
 
@@ -88,7 +88,7 @@
         </div>
       </div>
 
-      <!-- RECEIPT UI BOX -->
+      <!-- RECEIPT BREAKDOWN -->
       <div id="result-box" class="result-box hidden">
         <div class="receipt-header">
           <div class="receipt-stamp">SplitEasy Receipt</div>
@@ -141,14 +141,12 @@
           <a href="{{ url_for('logout') }}" class="btn btn-primary" style="width: auto;">Create Account / Log In</a>
         </div>
       {% else %}
-        <p class="subtext">Filter your saved receipts by entry date and exact time.</p>
+        <p class="subtext">Filter your saved receipts by entry date and exact time. Click a receipt to expand details.</p>
         <div class="filter-bar">
-          <input type="date" id="filter-date" />
-          <input type="time" id="filter-time" />
-          <button type="button" class="btn btn-secondary btn-sm" onclick="loadHistory()">Filter</button>
-        </div>
-        <div style="margin-bottom: 12px;">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="resetFilters()">Show All Bills</button>
+          <input type="date" id="filter-date" aria-label="Filter by date" />
+          <input type="time" id="filter-time" aria-label="Filter by time" />
+          <button type="button" class="btn btn-primary btn-sm" onclick="loadHistory()">Filter</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="resetFilters()">Reset</button>
         </div>
         <div id="history-list">
           <p class="subtext">Loading saved bills...</p>
@@ -176,27 +174,15 @@
       box.className = "alert";
     }
 
-    function setFieldError(inputEl, errEl, message) {
-      if (inputEl) inputEl.classList.add("input-error");
-      if (errEl) {
-        if (message) errEl.textContent = message;
-        errEl.classList.add("visible");
-      }
+    function clearFieldError(fieldId) {
+      const input = document.getElementById(fieldId);
+      const err = document.getElementById("err-" + fieldId);
+      if (input) input.classList.remove("input-error");
+      if (err) err.classList.remove("visible");
     }
 
-    function clearFieldError(fieldKey) {
-      const inputEl = document.getElementById(fieldKey);
-      const errEl = document.getElementById("err-" + fieldKey);
-      if (inputEl) inputEl.classList.remove("input-error");
-      if (errEl) errEl.classList.remove("visible");
-    }
-
-    function clearAllValidationErrors() {
+    function clearAllErrors() {
       clearCalcAlert();
-      clearFieldError("bill-title");
-      clearFieldError("equal-subtotal");
-      clearFieldError("itemized-subtotal");
-      clearFieldError("participants");
       document.querySelectorAll(".input-error").forEach(el => el.classList.remove("input-error"));
       document.querySelectorAll(".field-error").forEach(el => el.classList.remove("visible"));
       document.querySelectorAll(".inline-part-err, .inline-item-err").forEach(el => el.remove());
@@ -209,21 +195,25 @@
       document.getElementById("equal-subtotal-group").classList.toggle("hidden", mode === "itemized");
       document.getElementById("itemized-subtotal-group").classList.toggle("hidden", mode === "equal");
 
-      document.querySelectorAll(".participant-items-wrap").forEach(area => {
-        area.classList.toggle("hidden", mode === "equal");
+      document.querySelectorAll(".participant-items-wrap").forEach(wrap => {
+        wrap.classList.toggle("hidden", mode === "equal");
+        if (mode === "itemized" && wrap.querySelectorAll(".item-row").length === 0) {
+          const addBtn = wrap.querySelector("button");
+          if (addBtn) addItemRow(addBtn);
+        }
       });
 
+      clearAllErrors();
       updateItemizedSubtotal();
-      clearAllValidationErrors();
       recalculateIfVisible();
     }
 
     function updateParticipantNumbers() {
       const boxes = document.querySelectorAll("#participants-container .participant-box");
-      boxes.forEach((box, idx) => {
+      boxes.forEach((box, index) => {
         const nameInput = box.querySelector(".participant-name");
         if (nameInput) {
-          nameInput.placeholder = `Person ${idx + 1} Name`;
+          nameInput.placeholder = `Person ${index + 1} Name`;
         }
       });
     }
@@ -269,6 +259,11 @@
       }
 
       recalculateIfVisible();
+
+      const nameInput = box.querySelector(".participant-name");
+      if (nameInput) {
+        nameInput.focus();
+      }
     }
 
     function removeParticipant(btn) {
@@ -284,17 +279,13 @@
     function addItemRow(btn, itemName = "", itemPrice = "") {
       const box = btn.closest(".participant-box");
       const list = box.querySelector(".items-list");
-      const inlineItemErr = box.querySelector(".inline-item-err");
-      if (inlineItemErr) inlineItemErr.remove();
-
       const row = document.createElement("div");
       row.className = "item-row";
       row.innerHTML = `
         <input type="text" class="item-name" value="${escapeHtml(itemName)}" placeholder="Item (e.g., Pad Thai)" oninput="this.classList.remove('input-error'); recalculateIfVisible();" />
         <input type="number" class="item-price" step="0.01" min="0" value="${itemPrice}" placeholder="0.00" oninput="this.classList.remove('input-error'); updateItemizedSubtotal(); recalculateIfVisible();" />
-        <button type="button" class="btn btn-secondary btn-sm" onclick="removeItemRow(this)">✕</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="removeItemRow(this)" title="Remove Item">✕</button>
       `;
-
       list.appendChild(row);
       updateItemizedSubtotal();
       recalculateIfVisible();
@@ -333,88 +324,85 @@
       return isNaN(val) || val < 0 ? 0 : val;
     }
 
-    function validateForm() {
-      clearAllValidationErrors();
+    function validateRequiredFields() {
+      clearAllErrors();
       let isValid = true;
 
       const titleInput = document.getElementById("bill-title");
-      const titleErr = document.getElementById("err-bill-title");
       if (!titleInput.value.trim()) {
-        setFieldError(titleInput, titleErr, "Please enter a bill title.");
+        titleInput.classList.add("input-error");
+        document.getElementById("err-bill-title").classList.add("visible");
         isValid = false;
       }
 
       const boxes = document.querySelectorAll("#participants-container .participant-box");
       const partErr = document.getElementById("err-participants");
-      if (boxes.length === 0) {
-        setFieldError(null, partErr, "Please add at least one participant.");
-        isValid = false;
-      }
 
-      if (splitMode === "equal") {
-        const subInput = document.getElementById("equal-subtotal");
-        const subErr = document.getElementById("err-equal-subtotal");
-        const subVal = parseFloat(subInput.value);
-        if (isNaN(subVal) || subVal <= 0) {
-          setFieldError(subInput, subErr, "Please enter a subtotal greater than $0.00.");
-          isValid = false;
-        }
+      if (boxes.length === 0) {
+        partErr.textContent = "Please add at least one participant.";
+        partErr.classList.add("visible");
+        isValid = false;
       }
 
       boxes.forEach((box, idx) => {
         const nameInput = box.querySelector(".participant-name");
         if (!nameInput.value.trim()) {
           nameInput.classList.add("input-error");
-          const errEl = document.createElement("small");
-          errEl.className = "field-error visible inline-part-err";
-          errEl.textContent = `Please enter a name for Person ${idx + 1}.`;
-          box.querySelector(".participant-header").insertAdjacentElement("afterend", errEl);
+          const msg = document.createElement("small");
+          msg.className = "field-error visible inline-part-err";
+          msg.textContent = `Please enter a name for Person ${idx + 1}.`;
+          box.querySelector(".participant-header").insertAdjacentElement("afterend", msg);
           isValid = false;
         }
 
         if (splitMode === "itemized") {
           const itemRows = box.querySelectorAll(".item-row");
           if (itemRows.length === 0) {
-            const errEl = document.createElement("small");
-            errEl.className = "field-error visible inline-item-err";
-            errEl.textContent = "Add at least one food or drink item.";
-            box.querySelector(".participant-items-wrap").appendChild(errEl);
+            const msg = document.createElement("small");
+            msg.className = "field-error visible inline-item-err";
+            msg.textContent = "Please add at least one food or drink item.";
+            box.querySelector(".participant-items-wrap").appendChild(msg);
             isValid = false;
           } else {
-            let rowHasError = false;
             itemRows.forEach(row => {
               const iName = row.querySelector(".item-name");
               const iPrice = row.querySelector(".item-price");
               const priceVal = parseFloat(iPrice.value);
+              let rowInvalid = false;
+
               if (!iName.value.trim()) {
                 iName.classList.add("input-error");
-                rowHasError = true;
-                isValid = false;
+                rowInvalid = true;
               }
               if (isNaN(priceVal) || priceVal <= 0) {
                 iPrice.classList.add("input-error");
-                rowHasError = true;
+                rowInvalid = true;
+              }
+              if (rowInvalid && !box.querySelector(".inline-item-err")) {
+                const msg = document.createElement("small");
+                msg.className = "field-error visible inline-item-err";
+                msg.textContent = "Please enter an item name and price greater than $0.00.";
+                box.querySelector(".participant-items-wrap").appendChild(msg);
                 isValid = false;
               }
             });
-            if (rowHasError) {
-              const errEl = document.createElement("small");
-              errEl.className = "field-error visible inline-item-err";
-              errEl.textContent = "Enter an item name and price greater than $0.00.";
-              box.querySelector(".items-list").insertAdjacentElement("afterend", errEl);
-            }
           }
         }
       });
 
-      if (splitMode === "itemized") {
-        const totalSub = updateItemizedSubtotal();
-        if (totalSub <= 0) {
-          setFieldError(
-            document.getElementById("itemized-subtotal-display"),
-            document.getElementById("err-itemized-subtotal"),
-            "Add at least one item with a price greater than $0.00."
-          );
+      if (splitMode === "equal") {
+        const subInput = document.getElementById("equal-subtotal");
+        const subVal = parseFloat(subInput.value);
+        if (isNaN(subVal) || subVal <= 0) {
+          subInput.classList.add("input-error");
+          document.getElementById("err-equal-subtotal").classList.add("visible");
+          isValid = false;
+        }
+      } else {
+        const itemSub = updateItemizedSubtotal();
+        if (itemSub <= 0) {
+          document.getElementById("itemized-subtotal-display").classList.add("input-error");
+          document.getElementById("err-itemized-subtotal").classList.add("visible");
           isValid = false;
         }
       }
@@ -430,20 +418,14 @@
 
     function calculateSplit(showErrors = true) {
       if (showErrors) {
-        if (!validateForm()) {
+        if (!validateRequiredFields()) {
           lastCalculation = null;
           return null;
         }
       }
 
       const boxes = document.querySelectorAll("#participants-container .participant-box");
-      if (boxes.length === 0) {
-        if (!showErrors) {
-          document.getElementById("result-box").classList.add("hidden");
-        }
-        lastCalculation = null;
-        return null;
-      }
+      if (boxes.length === 0) return null;
 
       const billTitle = document.getElementById("bill-title").value.trim() || "Untitled Bill";
       const stateSelect = document.getElementById("state-select");
@@ -455,9 +437,8 @@
       let subtotal = 0;
 
       if (splitMode === "equal") {
-        const rawSub = parseFloat(document.getElementById("equal-subtotal").value);
-        subtotal = !isNaN(rawSub) && rawSub > 0 ? rawSub : 0;
-        if (subtotal <= 0 && showErrors) return null;
+        subtotal = parseFloat(document.getElementById("equal-subtotal").value);
+        if (isNaN(subtotal) || subtotal <= 0) return null;
 
         const taxAmount = +(subtotal * taxRate).toFixed(2);
         const tipAmount = +(subtotal * (tipPercent / 100)).toFixed(2);
@@ -508,7 +489,7 @@
           });
         });
 
-        if (subtotal <= 0 && showErrors) return null;
+        if (subtotal <= 0) return null;
 
         subtotal = +subtotal.toFixed(2);
         const taxAmount = +(subtotal * taxRate).toFixed(2);
@@ -555,9 +536,9 @@
 
       const breakdown = document.getElementById("result-breakdown");
       breakdown.innerHTML = calc.participants.map(p => {
-        let subitemsHtml = "";
+        let itemsHtml = "";
         if (calc.split_mode === "itemized" && p.items.length > 0) {
-          subitemsHtml = `<div class="receipt-subitems">` +
+          itemsHtml = `<div class="receipt-subitems">` +
             p.items.map(i => `
               <div class="receipt-subitem-row">
                 <span>• ${escapeHtml(i.item_name)}</span>
@@ -572,12 +553,30 @@
               <span>${escapeHtml(p.participant_name)}</span>
               <span>$${p.owed_amount.toFixed(2)}</span>
             </div>
-            ${subitemsHtml}
+            ${itemsHtml}
           </div>
         `;
       }).join("");
 
       document.getElementById("result-box").classList.remove("hidden");
+    }
+
+    function resetBillForm() {
+      document.getElementById("bill-title").value = "";
+      document.getElementById("equal-subtotal").value = "";
+      document.getElementById("participants-container").innerHTML = "";
+      updateItemizedSubtotal();
+
+      const defaultTipBtn = document.querySelector('.tip-btn[data-tip="15"]');
+      if (defaultTipBtn) {
+        selectTip(15, defaultTipBtn);
+      }
+      const customTipInput = document.getElementById("custom-tip-input");
+      if (customTipInput) customTipInput.value = "";
+
+      const resultBox = document.getElementById("result-box");
+      if (resultBox) resultBox.classList.add("hidden");
+      lastCalculation = null;
     }
 
     async function saveBill() {
@@ -592,11 +591,29 @@
       const data = await res.json();
 
       if (res.ok) {
+        resetBillForm();
         showCalcAlert("Bill saved to your history!", "success");
         loadHistory();
       } else {
         showCalcAlert(data.error || "Could not save bill.", "error");
       }
+    }
+
+    function formatReceiptDate(ts) {
+      if (!ts) return "";
+      const parsed = new Date(ts.replace(" ", "T"));
+      if (isNaN(parsed.getTime())) return ts;
+      return parsed.toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      });
+    }
+
+    function toggleHistoryReceipt(cardEl) {
+      cardEl.classList.toggle("expanded");
     }
 
     async function loadHistory() {
@@ -618,29 +635,84 @@
       }
 
       if (bills.length === 0) {
-        container.innerHTML = `<p class="subtext">No saved bills found for this filter.</p>`;
+        container.innerHTML = `<div class="empty-history">No saved receipts found for this filter.</div>`;
         return;
       }
 
-      container.innerHTML = bills.map(b => {
+      container.innerHTML = bills.map((b, index) => {
+        const modeLabel = b.split_mode === "equal" ? "Split Equally" : "Split Per Meal";
+        const niceDate = formatReceiptDate(b.entry_timestamp);
+        const peopleCount = `${b.participants.length} ${b.participants.length === 1 ? "Person" : "People"}`;
+
         const partsHtml = b.participants.map(p => {
-          const itemsText = p.items && p.items.length
-            ? ` (${p.items.map(i => `${escapeHtml(i.item_name)} $${Number(i.item_price).toFixed(2)}`).join(", ")})`
+          const itemsHtml = p.items && p.items.length
+            ? `<div class="receipt-subitems">` +
+                p.items.map(i => `
+                  <div class="receipt-subitem-row">
+                    <span>• ${escapeHtml(i.item_name)}</span>
+                    <span>$${Number(i.item_price).toFixed(2)}</span>
+                  </div>
+                `).join("") +
+              `</div>`
             : "";
-          return `<div class="history-part">${escapeHtml(p.participant_name)}${itemsText}: <strong>$${Number(p.owed_amount).toFixed(2)}</strong></div>`;
+
+          return `
+            <div class="receipt-person-block">
+              <div class="result-line">
+                <span>${escapeHtml(p.participant_name)}</span>
+                <span>$${Number(p.owed_amount).toFixed(2)}</span>
+              </div>
+              ${itemsHtml}
+            </div>
+          `;
         }).join("");
 
+        const initialExpanded = index === 0 ? "expanded" : "";
+
         return `
-          <div class="history-card">
-            <div class="history-top">
-              <span>${escapeHtml(b.bill_title)}</span>
-              <span>$${Number(b.total_amount).toFixed(2)}</span>
+          <article class="history-receipt-card ${initialExpanded}" onclick="toggleHistoryReceipt(this)">
+            <div class="history-receipt-summary">
+              <div>
+                <div class="history-title-row">
+                  <h3 class="history-title">${escapeHtml(b.bill_title)}</h3>
+                  <span class="history-mode-badge">${modeLabel}</span>
+                </div>
+                <div class="history-date">${escapeHtml(niceDate)} • ${peopleCount}</div>
+              </div>
+
+              <div class="history-summary-right">
+                <div class="history-total-block">
+                  <span class="history-total-label">TOTAL</span>
+                  <span class="history-total-val">$${Number(b.total_amount).toFixed(2)}</span>
+                </div>
+                <span class="history-chevron" aria-hidden="true">▾</span>
+              </div>
             </div>
-            <div class="history-meta">
-              ${escapeHtml(b.entry_timestamp)} • ${b.split_mode === 'equal' ? 'Split Equally' : 'Per Meal'} • Subtotal $${Number(b.subtotal).toFixed(2)} • Tax $${Number(b.tax_amount).toFixed(2)} • Tip ${b.tip_percent}%
+
+            <div class="history-receipt-details" onclick="event.stopPropagation()">
+              <div class="receipt-totals">
+                <div class="receipt-row">
+                  <span>Subtotal</span>
+                  <span>$${Number(b.subtotal).toFixed(2)}</span>
+                </div>
+                <div class="receipt-row">
+                  <span>Sales Tax</span>
+                  <span>$${Number(b.tax_amount).toFixed(2)}</span>
+                </div>
+                <div class="receipt-row">
+                  <span>Tip (${b.tip_percent}%)</span>
+                  <span>$${Number(b.tip_amount).toFixed(2)}</span>
+                </div>
+                <div class="receipt-row grand-total">
+                  <span>GRAND TOTAL</span>
+                  <span>$${Number(b.total_amount).toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div class="receipt-section-label">AMOUNT OWED PER PERSON</div>
+              ${partsHtml}
             </div>
-            ${partsHtml}
-          </div>
+          </article>
         `;
       }).join("");
     }
