@@ -925,6 +925,43 @@
       }
     }
 
+    /* STATE Detector */
+    function applyStateIfValid(stateCode) {
+      if (!stateCode) return;
+      const stateSelect = document.getElementById("state-select");
+      if (!stateSelect) return;
+
+      const optionExists = Array.from(stateSelect.options).some(
+        opt => opt.value === stateCode
+      );
+      if (optionExists) {
+        stateSelect.value = stateCode;
+        recalculateIfVisible();
+      }
+    }
+
+    async function detectGuestState() {
+      if (!IS_GUEST) return;
+
+      const cachedState = sessionStorage.getItem("spliteasy_detected_state");
+      if (cachedState) {
+        applyStateIfValid(cachedState);
+        return;
+      }
+
+      try {
+        const res = await fetch("https://ipapi.co/json/");
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data.country_code === "US" && data.region_code) {
+          sessionStorage.setItem("spliteasy_detected_state", data.region_code);
+          applyStateIfValid(data.region_code);
+        }
+      } catch (err) {
+      }
+    }
+
     function escapeHtml(str) {
       return String(str)
         .replace(/&/g, "&amp;")
@@ -934,7 +971,9 @@
     }
 
     document.addEventListener("DOMContentLoaded", () => {
-      if (!IS_GUEST) {
+      if (IS_GUEST) {
+        detectGuestState();
+      } else {
         loadHistory();
       }
     });

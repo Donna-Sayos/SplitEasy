@@ -113,6 +113,30 @@
         : "Save timestamped receipts and auto-apply your home state sales tax.";
     }
 
+    async function prefillSignupState() {
+      const select = document.getElementById("reg-state");
+      if (!select) return;
+
+      let detected = sessionStorage.getItem("spliteasy_detected_state");
+      if (!detected) {
+        try {
+          const res = await fetch("https://ipapi.co/json/");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.country_code === "US" && data.region_code) {
+              detected = data.region_code;
+              sessionStorage.setItem("spliteasy_detected_state", detected);
+            }
+          }
+        } catch (err) {
+        }
+      }
+
+      if (detected && Array.from(select.options).some((opt) => opt.value === detected)) {
+        select.value = detected;
+      }
+    }
+
     async function loadStates() {
       const select = document.getElementById("reg-state");
       try {
@@ -125,6 +149,7 @@
           opt.textContent = `${s.state_code} - ${s.state_name} (${(s.tax_rate * 100).toFixed(2)}%)`;
           select.appendChild(opt);
         });
+        await prefillSignupState();
       } catch (err) {
         select.innerHTML = '<option value="">Could not load states</option>';
       }
