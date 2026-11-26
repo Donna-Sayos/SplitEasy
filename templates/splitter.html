@@ -14,7 +14,10 @@
         <span class="badge">Guest Mode (Calculator Only)</span>
         <a href="{{ url_for('logout') }}" class="btn-link">Log In / Sign Up</a>
       {% else %}
-        <span class="badge">Logged in: <strong>{{ user.username }}</strong> ({{ user.state_code }} {{ "%.2f"|format(user.tax_rate * 100) }}% Tax)</span>
+        <!-- <span class="badge">Logged in: <strong>{{ user.username }}</strong> ({{ user.state_code }} {{ "%.2f"|format(user.tax_rate * 100) }}% Tax)</span> -->
+         <button type="button" id="nav-profile-btn" class="badge badge-btn" onclick="openAccountModal()" title="Account Settings">
+          {{ user.username }} ({{ user.state_code }}) ⚙
+        </button>
         <a href="{{ url_for('logout') }}" class="btn-link">Logout</a>
       {% endif %}
     </div>
@@ -154,6 +157,65 @@
       {% endif %}
     </section>
   </main>
+
+  {% if not is_guest %}
+  <div id="account-modal" class="modal-backdrop hidden" onclick="closeAccountModal(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2>Account Settings</h2>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="closeAccountModal()">✕</button>
+      </div>
+      <p class="subtext">Update your username, email, default home state, or password.</p>
+
+      <div id="account-alert" class="alert"></div>
+
+      <form id="account-form" novalidate onsubmit="handleAccountUpdate(event)">
+        <div class="form-group">
+          <label for="acc-username">Username</label>
+          <input type="text" id="acc-username" value="{{ user.username }}" required />
+        </div>
+
+        <div class="form-group">
+          <label for="acc-email">Email</label>
+          <input type="email" id="acc-email" value="{{ user.email }}" required />
+        </div>
+
+        <div class="form-group">
+          <label for="acc-state">Default Home State (Auto-Tax)</label>
+          <select id="acc-state">
+            {% for s in states %}
+              <option value="{{ s.state_code }}" {% if user.state_code == s.state_code %}selected{% endif %}>
+                {{ s.state_code }} - {{ s.state_name }} ({{ "%.2f"|format(s.tax_rate * 100) }}%)
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <button type="button" id="toggle-password-btn" class="btn btn-secondary btn-sm" onclick="togglePasswordFields()">
+            Change Password
+          </button>
+        </div>
+
+        <div id="password-fields-wrap" class="hidden">
+          <div class="form-group">
+            <label for="acc-new-password">New Password *</label>
+            <input type="password" id="acc-new-password" placeholder="Enter new password" />
+          </div>
+          <div class="form-group">
+            <label for="acc-confirm-password">Confirm New Password *</label>
+            <input type="password" id="acc-confirm-password" placeholder="Re-enter new password" />
+          </div>
+        </div>
+
+        <div class="action-row">
+          <button type="button" class="btn btn-secondary" onclick="closeAccountModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
 
   <script>
     const IS_GUEST = document.body.dataset.isGuest === "true";
@@ -721,6 +783,146 @@
       document.getElementById("filter-date").value = "";
       document.getElementById("filter-time").value = "";
       loadHistory();
+    }
+
+    /* ACCOUNT MODAL */
+    let isChangingPassword = false;
+    let isUpdatingAccount = false;
+    let originalAccount = { username: "", email: "", state_code: "" };
+
+    function togglePasswordFields(forceState = null) {
+      isChangingPassword = forceState !== null ? forceState : !isChangingPassword;
+      const wrap = document.getElementById("password-fields-wrap");
+      const btn = document.getElementById("toggle-password-btn");
+      const newInput = document.getElementById("acc-new-password");
+      const confirmInput = document.getElementById("acc-confirm-password");
+
+      wrap.classList.toggle("hidden", !isChangingPassword);
+      btn.textContent = isChangingPassword ? "Cancel Password Change" : "Change Password";
+
+      if (!isChangingPassword) {
+        newInput.value = "";
+        confirmInput.value = "";
+      } else {
+        newInput.focus();
+      }
+    }
+
+    function openAccountModal() {
+      const alertBox = document.getElementById("account-alert");
+      if (alertBox) {
+        alertBox.textContent = "";
+        alertBox.className = "alert";
+      }
+
+      originalAccount = {
+        username: document.getElementById("acc-username").value.trim(),
+        email: document.getElementById("acc-email").value.trim().toLowerCase(),
+        state_code: document.getElementById("acc-state").value
+      };
+
+      togglePasswordFields(false);
+      document.getElementById("account-modal").classList.remove("hidden");
+    }
+
+    function closeAccountModal(e) {
+      if (e && e.target !== e.currentTarget) return;
+      document.getElementById("account-modal").classList.add("hidden");
+    }
+
+    async function handleAccountUpdate(e) {
+      e.preventDefault();
+      if (isUpdatingAccount) return;
+
+      const alertBox = document.getElementById("account-alert");
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+
+      const payload = {
+        username: document.getElementById("acc-username").value.trim(),
+        email: document.getElementById("acc-email").value.trim(),
+        state_code: document.getElementById("acc-state").value,
+        change_password: isChangingPassword,
+        new_password: document.getElementById("acc-new-password").value,
+        confirm_password: document.getElementById("acc-confirm-password").value
+      };
+
+      // Required fields
+      if (!payload.username || !payload.email || !payload.state_code) {
+        alertBox.textContent = "Username, email, and home state are required.";
+        alertBox.className = "alert error";
+        return;
+      }
+
+      // skip API if nothing changed
+      const isUnchanged =
+        payload.username === originalAccount.username &&
+        payload.email.toLowerCase() === originalAccount.email &&
+        payload.state_code === originalAccount.state_code &&
+        !isChangingPassword;
+
+      if (isUnchanged) {
+        alertBox.textContent = "No changes were made.";
+        alertBox.className = "alert error";
+        return;
+      }
+
+      // New password + confirm validation
+      if (isChangingPassword) {
+        if (!payload.new_password.trim() || !payload.confirm_password.trim()) {
+          alertBox.textContent = "Please fill out both password fields.";
+          alertBox.className = "alert error";
+          return;
+        }
+        if (payload.new_password !== payload.confirm_password) {
+          alertBox.textContent = "Passwords do not match.";
+          alertBox.className = "alert error";
+          return;
+        }
+      }
+
+      // Invoke PUT /api/account
+      isUpdatingAccount = true;
+      if (submitBtn) submitBtn.textContent = "Saving...";
+
+      try {
+        const res = await fetch("/api/account", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          originalAccount = {
+            username: data.user.username,
+            email: data.user.email.toLowerCase(),
+            state_code: data.user.state_code
+          };
+
+          const badgeBtn = document.getElementById("nav-profile-btn");
+          if (badgeBtn) {
+            badgeBtn.textContent = `${data.user.username} (${data.user.state_code}) ⚙`;
+          }
+          const stateSelect = document.getElementById("state-select");
+          if (stateSelect) {
+            stateSelect.value = data.user.state_code;
+            recalculateIfVisible();
+          }
+
+          alertBox.textContent = data.message || "Account updated!";
+          alertBox.className = "alert success";
+          togglePasswordFields(false);
+        } else {
+          alertBox.textContent = data.error || "Could not update account.";
+          alertBox.className = "alert error";
+        }
+      } catch (err) {
+        alertBox.textContent = "Network error. Please try again.";
+        alertBox.className = "alert error";
+      } finally {
+        isUpdatingAccount = false;
+        if (submitBtn) submitBtn.textContent = "Save Changes";
+      }
     }
 
     function escapeHtml(str) {

@@ -137,6 +137,76 @@ def api_login():
     session["user_id"] = user["user_id"]
     return jsonify({"message": "Logged in", "redirect": url_for("splitter")}), 200
 
+@app.route("/api/account", methods=["PUT"])
+def api_update_account():
+    if "user_id" not in session:
+        return jsonify({"error": "Unauthorized."}), 401
+
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    email = data.get("email", "").strip().lower()
+    state_code = data.get("state_code", "").strip().upper()
+    change_password = bool(data.get("change_password"))
+    new_password = data.get("new_password", "").strip()
+    confirm_password = data.get("confirm_password", "").strip()
+
+    if not username or not email or not state_code:
+        return jsonify({"error": "Username, email, and home state are required."}), 400
+
+    conn = get_db()
+    user = conn.execute(
+        "SELECT user_id, password FROM Users WHERE user_id = ?",
+        (session["user_id"],),
+    ).fetchone()
+
+    if not user:
+        conn.close()
+        return jsonify({"error": "User not found."}), 404
+
+    password_to_save = user["password"]
+    if change_password:
+        if not new_password or not confirm_password:
+            conn.close()
+            return jsonify({"error": "Please enter and confirm your new password."}), 400
+        if new_password != confirm_password:
+            conn.close()
+            return jsonify({"error": "New password and confirmation do not match."}), 400
+        if new_password == user["password"]:
+            conn.close()
+            return jsonify({"error": "New password cannot match your current password."}), 400
+        password_to_save = new_password
+
+    conflict = conn.execute(
+        """
+        SELECT user_id FROM Users
+        WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = ?) AND user_id != ?
+        """,
+        (username, email, session["user_id"]),
+    ).fetchone()
+
+    if conflict:
+        conn.close()
+        return jsonify({"error": "That username or email is already in use."}), 409
+
+    conn.execute(
+        """
+        UPDATE Users
+        SET username = ?, email = ?, password = ?, state_code = ?
+        WHERE user_id = ?
+        """,
+        (username, email, password_to_save, state_code, session["user_id"]),
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "message": "Account settings updated!",
+        "user": {
+            "username": username,
+            "email": email,
+            "state_code": state_code
+        }
+    }), 200
 
 @app.route("/api/bills", methods=["GET"])
 def api_get_bills():
