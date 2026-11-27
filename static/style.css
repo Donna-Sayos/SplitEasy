@@ -620,6 +620,12 @@ select[size]::-webkit-scrollbar-thumb:hover {
   color: var(--muted);
 }
 
+.receipt-extra-top {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dotted var(--border);
+}
+
 .action-row {
   display: grid;
   grid-template-columns: 1fr 1fr;

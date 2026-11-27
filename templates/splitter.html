@@ -478,7 +478,7 @@
       calculateSplit(false);
     }
 
-    function calculateSplit(showErrors = true) {
+        function calculateSplit(showErrors = true) {
       if (showErrors) {
         if (!validateRequiredFields()) {
           lastCalculation = null;
@@ -557,10 +557,12 @@
         const taxAmount = +(subtotal * taxRate).toFixed(2);
         const tipAmount = +(subtotal * (tipPercent / 100)).toFixed(2);
         const totalAmount = +(subtotal + taxAmount + tipAmount).toFixed(2);
-        const sharedExtras = (taxAmount + tipAmount) / participants.length;
 
         participants.forEach(p => {
-          p.owed_amount = +(p.person_sub + sharedExtras).toFixed(2);
+          const ratio = subtotal > 0 ? p.person_sub / subtotal : 0;
+          p.tax_share = +(taxAmount * ratio).toFixed(2);
+          p.tip_share = +(tipAmount * ratio).toFixed(2);
+          p.owed_amount = +(p.person_sub + p.tax_share + p.tip_share).toFixed(2);
         });
 
         renderReceipt({
@@ -580,7 +582,7 @@
       return lastCalculation;
     }
 
-    function renderReceipt(calc) {
+        function renderReceipt(calc) {
       lastCalculation = calc;
 
       document.getElementById("receipt-title").textContent = calc.bill_title;
@@ -600,14 +602,25 @@
       breakdown.innerHTML = calc.participants.map(p => {
         let itemsHtml = "";
         if (calc.split_mode === "itemized" && p.items.length > 0) {
-          itemsHtml = `<div class="receipt-subitems">` +
-            p.items.map(i => `
-              <div class="receipt-subitem-row">
-                <span>• ${escapeHtml(i.item_name)}</span>
-                <span>$${i.item_price.toFixed(2)}</span>
-              </div>
-            `).join("") +
-            `</div>`;
+          const itemRows = p.items.map(i => `
+            <div class="receipt-subitem-row">
+              <span>• ${escapeHtml(i.item_name)}</span>
+              <span>$${i.item_price.toFixed(2)}</span>
+            </div>
+          `).join("");
+
+          const extrasRows = `
+            <div class="receipt-subitem-row receipt-extra-top">
+              <span>• Tax Split</span>
+              <span>$${Number(p.tax_share).toFixed(2)}</span>
+            </div>
+            <div class="receipt-subitem-row">
+              <span>• Tip Split</span>
+              <span>$${Number(p.tip_share).toFixed(2)}</span>
+            </div>
+          `;
+
+          itemsHtml = `<div class="receipt-subitems">${itemRows}${extrasRows}</div>`;
         }
         return `
           <div class="receipt-person-block">
@@ -678,7 +691,7 @@
       cardEl.classList.toggle("expanded");
     }
 
-    async function loadHistory() {
+        async function loadHistory() {
       if (IS_GUEST) return;
       const dateVal = document.getElementById("filter-date").value;
       const timeVal = document.getElementById("filter-time").value;
@@ -705,18 +718,36 @@
         const modeLabel = b.split_mode === "equal" ? "Split Equally" : "Split Per Meal";
         const niceDate = formatReceiptDate(b.entry_timestamp);
         const peopleCount = `${b.participants.length} ${b.participants.length === 1 ? "Person" : "People"}`;
+        const billSub = Number(b.subtotal);
 
         const partsHtml = b.participants.map(p => {
-          const itemsHtml = p.items && p.items.length
-            ? `<div class="receipt-subitems">` +
-                p.items.map(i => `
-                  <div class="receipt-subitem-row">
-                    <span>• ${escapeHtml(i.item_name)}</span>
-                    <span>$${Number(i.item_price).toFixed(2)}</span>
-                  </div>
-                `).join("") +
-              `</div>`
-            : "";
+          let itemsHtml = "";
+          if (b.split_mode === "itemized" && p.items && p.items.length) {
+            const personSub = p.items.reduce((acc, i) => acc + Number(i.item_price), 0);
+            const ratio = billSub > 0 ? personSub / billSub : 0;
+            const taxShare = +(Number(b.tax_amount) * ratio).toFixed(2);
+            const tipShare = +(Number(b.tip_amount) * ratio).toFixed(2);
+
+            const itemRows = p.items.map(i => `
+              <div class="receipt-subitem-row">
+                <span>• ${escapeHtml(i.item_name)}</span>
+                <span>$${Number(i.item_price).toFixed(2)}</span>
+              </div>
+            `).join("");
+
+            const extrasRows = `
+              <div class="receipt-subitem-row receipt-extra-top">
+                <span>• Tax Split</span>
+                <span>$${taxShare.toFixed(2)}</span>
+              </div>
+              <div class="receipt-subitem-row">
+                <span>• Tip Split</span>
+                <span>$${tipShare.toFixed(2)}</span>
+              </div>
+            `;
+
+            itemsHtml = `<div class="receipt-subitems">${itemRows}${extrasRows}</div>`;
+          }
 
           return `
             <div class="receipt-person-block">
