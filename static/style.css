@@ -57,17 +57,25 @@ body {
 }
 
 .badge {
+  display: inline-flex;
+  align-items: center;
   background-color: var(--card-alt);
   border: 1px solid var(--border);
-  padding: 4px 10px;
+  padding: 6px 12px;
   border-radius: 6px;
+  font-size: 0.9rem;
   font-weight: 500;
+  line-height: 1.2;
 }
 
 .btn-link {
+  display: inline-flex;
+  align-items: center;
   color: var(--text);
   text-decoration: none;
+  font-size: 0.9rem;
   font-weight: 600;
+  line-height: 1.2;
   padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
