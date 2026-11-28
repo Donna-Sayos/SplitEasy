@@ -344,19 +344,20 @@
       }
     }
 
-    function addItemRow(btn, itemName = "", itemPrice = "") {
+    function addItemRow(btn) {
       const box = btn.closest(".participant-box");
-      const list = box.querySelector(".items-list");
+      const itemsWrap = box.querySelector(".items-list");
+
       const row = document.createElement("div");
       row.className = "item-row";
       row.innerHTML = `
-        <input type="text" class="item-name" value="${escapeHtml(itemName)}" placeholder="Item (e.g., Pad Thai)" oninput="this.classList.remove('input-error'); recalculateIfVisible();" />
-        <input type="number" class="item-price" step="0.01" min="0" value="${itemPrice}" placeholder="0.00" oninput="this.classList.remove('input-error'); updateItemizedSubtotal(); recalculateIfVisible();" />
-        <button type="button" class="btn btn-secondary btn-sm" onclick="removeItemRow(this)" title="Remove Item">✕</button>
+        <input type="text" class="item-name" placeholder="Item (e.g. Burger)" oninput="clearFieldError(this); recalculateIfVisible()" />
+        <input type="number" class="item-price" placeholder="0.00" step="0.01" min="0" oninput="clearFieldError(this); recalculateIfVisible()" />
+        <button type="button" class="btn btn-secondary btn-sm" onclick="removeItemRow(this)">✕</button>
       `;
-      list.appendChild(row);
-      updateItemizedSubtotal();
-      recalculateIfVisible();
+
+      itemsWrap.appendChild(row);
+      row.querySelector(".item-name").focus();
     }
 
     function removeItemRow(btn) {
