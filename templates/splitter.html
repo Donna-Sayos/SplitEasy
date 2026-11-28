@@ -122,6 +122,12 @@
         <div id="result-breakdown"></div>
 
         <div class="receipt-footer">THANK YOU FOR SPLITTING WITH SPLITEASY</div>
+
+        <div class="receipt-actions">
+          <button type="button" id="copy-receipt-btn" class="btn btn-secondary btn-sm" onclick="copyReceiptSummary(lastCalculation, this)">
+            Copy Receipt Summary
+          </button>
+        </div>
       </div>
 
       <div class="action-row {% if is_guest %}guest-actions{% endif %}">
@@ -478,7 +484,7 @@
       calculateSplit(false);
     }
 
-        function calculateSplit(showErrors = true) {
+    function calculateSplit(showErrors = true) {
       if (showErrors) {
         if (!validateRequiredFields()) {
           lastCalculation = null;
@@ -582,7 +588,7 @@
       return lastCalculation;
     }
 
-        function renderReceipt(calc) {
+    function renderReceipt(calc) {
       lastCalculation = calc;
 
       document.getElementById("receipt-title").textContent = calc.bill_title;
@@ -654,6 +660,44 @@
       lastCalculation = null;
     }
 
+    async function copyReceiptSummary(calc, btnEl) {
+      if (!calc) return;
+
+      const modeLabel = calc.split_mode === "equal" ? "Split Equally" : "Split Per Meal";
+      const taxPct = (calc.tax_rate * 100).toFixed(2);
+      const stateLabel = calc.state_code ? `${calc.state_code} Tax (${taxPct}%)` : `Tax (${taxPct}%)`;
+
+      const lines = [
+        `SplitEasy — ${calc.bill_title} (${modeLabel})`,
+        `Subtotal: $${calc.subtotal.toFixed(2)} | ${stateLabel}: $${calc.tax_amount.toFixed(2)} | Tip (${calc.tip_percent}%): $${calc.tip_amount.toFixed(2)}`,
+        `Grand Total: $${calc.total_amount.toFixed(2)}`,
+        "",
+        "Amount Owed:"
+      ];
+
+      calc.participants.forEach(p => {
+        if (calc.split_mode === "itemized" && p.items && p.items.length > 0) {
+          const itemsList = p.items.map(i => `${i.item_name} $${i.item_price.toFixed(2)}`).join(", ");
+          lines.push(`• ${p.participant_name}: $${p.owed_amount.toFixed(2)} (${itemsList} | Tax $${Number(p.tax_share).toFixed(2)}, Tip $${Number(p.tip_share).toFixed(2)})`);
+        } else {
+          lines.push(`• ${p.participant_name}: $${p.owed_amount.toFixed(2)}`);
+        }
+      });
+
+      const text = lines.join("\n");
+
+      try {
+        await navigator.clipboard.writeText(text);
+        if (btnEl) {
+          const original = btnEl.textContent;
+          btnEl.textContent = "Copied!";
+          setTimeout(() => { btnEl.textContent = original; }, 2000);
+        }
+      } catch (err) {
+        alert("Could not copy receipt to clipboard.");
+      }
+    }
+
     async function saveBill() {
       const calc = calculateSplit(true);
       if (!calc) return;
@@ -691,7 +735,7 @@
       cardEl.classList.toggle("expanded");
     }
 
-        async function loadHistory() {
+    async function loadHistory() {
       if (IS_GUEST) return;
       const dateVal = document.getElementById("filter-date").value;
       const timeVal = document.getElementById("filter-time").value;

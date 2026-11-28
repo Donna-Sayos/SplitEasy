@@ -626,6 +626,14 @@ select[size]::-webkit-scrollbar-thumb:hover {
   border-top: 1px dotted var(--border);
 }
 
+.receipt-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+
 .action-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
