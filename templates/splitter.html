@@ -666,9 +666,17 @@
       const modeLabel = calc.split_mode === "equal" ? "Split Equally" : "Split Per Meal";
       const taxPct = (calc.tax_rate * 100).toFixed(2);
       const stateLabel = calc.state_code ? `${calc.state_code} Tax (${taxPct}%)` : `Tax (${taxPct}%)`;
+      const dateLine = calc.date_label || new Date().toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit"
+      });
 
       const lines = [
         `SplitEasy — ${calc.bill_title} (${modeLabel})`,
+        dateLine,
         `Subtotal: $${calc.subtotal.toFixed(2)} | ${stateLabel}: $${calc.tax_amount.toFixed(2)} | Tip (${calc.tip_percent}%): $${calc.tip_amount.toFixed(2)}`,
         `Grand Total: $${calc.total_amount.toFixed(2)}`,
         "",
@@ -696,6 +704,46 @@
       } catch (err) {
         alert("Could not copy receipt to clipboard.");
       }
+    }
+
+    function copySavedBill(billId, btnEl) {
+      const b = window.savedBillsMap?.[billId];
+      if (!b) return;
+
+      const billSub = Number(b.subtotal);
+      const taxAmt = Number(b.tax_amount);
+      const tipAmt = Number(b.tip_amount);
+      const computedRate = billSub > 0 ? taxAmt / billSub : 0;
+
+      const normalized = {
+        bill_title: b.bill_title,
+        date_label: formatReceiptDate(b.entry_timestamp),
+        split_mode: b.split_mode,
+        state_code: b.state_code || "",
+        tax_rate: b.tax_rate !== undefined ? Number(b.tax_rate) : computedRate,
+        subtotal: billSub,
+        tip_percent: Number(b.tip_percent),
+        tax_amount: taxAmt,
+        tip_amount: tipAmt,
+        total_amount: Number(b.total_amount),
+        participants: b.participants.map(p => {
+          const items = (p.items || []).map(i => ({
+            item_name: i.item_name,
+            item_price: Number(i.item_price)
+          }));
+          const personSub = items.reduce((sum, i) => sum + i.item_price, 0);
+          const ratio = billSub > 0 ? personSub / billSub : 0;
+          return {
+            participant_name: p.participant_name,
+            owed_amount: Number(p.owed_amount),
+            tax_share: +(taxAmt * ratio).toFixed(2),
+            tip_share: +(tipAmt * ratio).toFixed(2),
+            items
+          };
+        })
+      };
+
+      copyReceiptSummary(normalized, btnEl);
     }
 
     async function saveBill() {
@@ -758,7 +806,11 @@
         return;
       }
 
+      window.savedBillsMap = {};
+
       container.innerHTML = bills.map((b, index) => {
+        window.savedBillsMap[b.bill_id] = b;
+
         const modeLabel = b.split_mode === "equal" ? "Split Equally" : "Split Per Meal";
         const niceDate = formatReceiptDate(b.entry_timestamp);
         const peopleCount = `${b.participants.length} ${b.participants.length === 1 ? "Person" : "People"}`;
@@ -848,6 +900,12 @@
 
               <div class="receipt-section-label">AMOUNT OWED PER PERSON</div>
               ${partsHtml}
+
+              <div class="receipt-actions">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="copySavedBill(${b.bill_id}, this)">
+                  Copy Receipt Summary
+                </button>
+              </div>
             </div>
           </article>
         `;
